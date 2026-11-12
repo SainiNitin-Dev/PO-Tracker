@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     if (!conversation) { const created = await supabase.from("coach_conversations").insert({ user_id: user.id }).select("id").single(); if (created.error) throw created.error; conversation = created.data; }
     await supabase.from("coach_messages").insert({ conversation_id: conversation.id, user_id: user.id, role: "user", content: message.trim() });
     const [{ data: history }, facts] = await Promise.all([supabase.from("coach_messages").select("role,content").eq("conversation_id", conversation.id).order("created_at", { ascending: false }).limit(12), trainingSnapshot(supabase, user.id)]);
-    const answer = await completeCoachMessage([{ role: "system", content: `${playbook}\n\nDATABASE FACTS (retrieved by server function):\n${JSON.stringify(facts)}` }, ...(history ?? []).reverse().map((item) => ({ role: item.role, content: item.content }))]) ?? "Coach setup is not complete yet. Add CHAT_API_BASE_URL, CHAT_API_KEY, and CHAT_MODEL in Vercel to activate it.";
+    const answer = await completeCoachMessage([{ role: "system", content: `${playbook}\n\nCall get_training_snapshot before answering. The tool output is the only source for training facts and numbers.` }, ...(history ?? []).reverse().map((item) => ({ role: item.role as "user" | "assistant", content: item.content }))], facts) ?? "Coach setup is not complete yet. Add CHAT_API_BASE_URL, CHAT_API_KEY, and CHAT_MODEL in Vercel to activate it.";
     await supabase.from("coach_messages").insert({ conversation_id: conversation.id, user_id: user.id, role: "assistant", content: answer });
     return NextResponse.json({ answer });
   } catch (e) { return NextResponse.json({ error: e instanceof Error ? e.message : "Coach unavailable" }, { status: 400 }); }
