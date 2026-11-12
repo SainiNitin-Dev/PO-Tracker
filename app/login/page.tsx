@@ -1,21 +1,5 @@
 "use client";
-
 import { createBrowserClient } from "@supabase/ssr";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-
-export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const router = useRouter();
-  async function submit(event: React.FormEvent) {
-    event.preventDefault(); setLoading(true); setError("");
-    const supabase = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!);
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-    if (signInError) { setError(signInError.message); setLoading(false); return; }
-    router.replace("/"); router.refresh();
-  }
-  return <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6"><form onSubmit={submit} className="space-y-4 rounded-2xl bg-zinc-900 p-6"><h1 className="text-2xl font-bold">Welcome back</h1><label className="block text-sm">Email<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="mt-1 w-full rounded-lg bg-zinc-800 p-3" /></label><label className="block text-sm">Password<input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="mt-1 w-full rounded-lg bg-zinc-800 p-3" /></label>{error && <p className="text-sm text-red-400">{error}</p>}<button disabled={loading} className="w-full rounded-lg bg-lime-400 p-3 font-semibold text-zinc-950">{loading ? "Logging in…" : "Log in"}</button></form></main>;
-}
+export default function LoginPage() { const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [loading, setLoading] = useState(false); const router = useRouter(); async function submit(event: React.FormEvent) { event.preventDefault(); setLoading(true); setError(""); const supabase = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!); const { error: signInError } = await supabase.auth.signInWithPassword({ email, password }); if (signInError) { setError(signInError.message); setLoading(false); return; } router.replace("/"); router.refresh(); } return <main className="app-page flex flex-col justify-center"><img src="/progressive-logo.png" alt="Progressive" className="mb-8 w-24 rounded-3xl shadow-2xl"/><p className="eyebrow">Welcome back</p><h1 className="mt-2 text-4xl font-black tracking-tight">Let&apos;s train.</h1><p className="mt-3 text-slate-400">Your workout history and coaching data stay private to you.</p><form onSubmit={submit} className="surface mt-8 space-y-5 p-5"><label className="block text-sm font-semibold">Email<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="mt-2 w-full rounded-2xl p-4"/></label><label className="block text-sm font-semibold">Password<input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="mt-2 w-full rounded-2xl p-4"/></label>{error && <p className="rounded-xl bg-red-400/10 p-3 text-sm text-red-200">{error}</p>}<button disabled={loading} className="primary-action w-full">{loading ? "Signing you in…" : "Log in"}</button></form></main>; }
