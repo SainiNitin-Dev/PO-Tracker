@@ -1,0 +1,4 @@
+"use client";
+import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+export default function RouteFeedback() { const path = usePathname(); const [loading, setLoading] = useState(false); useEffect(() => { setLoading(false); }, [path]); useEffect(() => { const onClick = (event: MouseEvent) => { const link = (event.target as Element | null)?.closest("a[href]") as HTMLAnchorElement | null; if (link && !event.metaKey && !event.ctrlKey && link.origin === location.origin) setLoading(true); }; document.addEventListener("click", onClick, true); return () => document.removeEventListener("click", onClick, true); }, []); return <div aria-hidden className={`fixed inset-x-0 top-0 z-[100] h-1 origin-left bg-sky-400 shadow-[0_0_18px_#38bdf8] transition-transform duration-300 ${loading ? "scale-x-100" : "scale-x-0"}`} />; }
