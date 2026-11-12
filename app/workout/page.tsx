@@ -5,7 +5,7 @@ export default async function WorkoutPage() {
   const { supabase, user } = await requireUser();
   const { data: program } = await supabase.from("programs").select("id,name").eq("user_id", user.id).eq("is_active", true).maybeSingle();
   const [{ data: gyms }, { data: days }, { data: gymExercises }] = await Promise.all([
-    supabase.from("gyms").select("id,name").order("name"),
+    supabase.from("gyms").select("id,name,weight_increment_kg").order("name"),
     program ? supabase.from("program_days").select("id,name,weekday,sort_order").eq("program_id", program.id).order("sort_order") : Promise.resolve({ data: [] as never[] }),
     supabase.from("gym_exercises").select("id,gym_id,exercise_id,equipment_label,exercise:exercises(name,tracking_type)")
   ]);

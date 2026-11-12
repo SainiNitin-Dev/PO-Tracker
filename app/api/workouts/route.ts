@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/user";
+import { getSuggestion } from "@/lib/progression";
 
 export async function POST(request: Request) {
   try {
     const { supabase, user } = await requireUser();
     const body = await request.json();
+    if (body.action === "suggestion") {
+      const { data: prior } = await supabase.from("workout_exercises").select("id,workout_sets(weight_kg,reps,duration_seconds,rir,set_kind),workout_sessions!inner(user_id,status,performed_at,notes)").eq("gym_exercise_id", body.gymExerciseId).eq("workout_sessions.user_id", user.id).eq("workout_sessions.status", "completed").order("performed_at", { referencedTable: "workout_sessions", ascending: false }).limit(1).maybeSingle();
+      const session = Array.isArray(prior?.workout_sessions) ? prior?.workout_sessions[0] : prior?.workout_sessions;
+      const sets = (prior?.workout_sets ?? []).map((set) => ({ weightKg: set.weight_kg, reps: set.reps, durationSeconds: set.duration_seconds, rir: set.rir, setKind: set.set_kind }));
+      return NextResponse.json(getSuggestion({ trackingType: body.trackingType, incrementKg: Number(body.incrementKg), repMin: body.repMin, repMax: body.repMax, timeTargetSeconds: body.timeTargetSeconds, latestSets: sets, painNote: /pain|sharp|joint/i.test(session?.notes ?? "") }));
+    }
     if (body.action === "start") {
       const { data: session, error } = await supabase.from("workout_sessions").insert({ user_id: user.id, gym_id: body.gymId, program_day_id: body.programDayId }).select("id").single();
       if (error) throw error;
