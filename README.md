@@ -4,7 +4,7 @@ Phase 1 foundation: Supabase authentication, roles, gym/exercise administration,
 
 ## Free-tier deployment
 
-1. Create a free Supabase project and run `supabase/migrations/0001_phase_one.sql` in its SQL editor. It also creates the private photo bucket.
+1. Create a free Supabase project and run every migration in `supabase/migrations/` in numeric order. The first migration also creates the private photo bucket.
 2. Copy `.env.example` to `.env.local` and fill its values. Keep `SUPABASE_SERVICE_ROLE_KEY` server-only.
 3. Run `npm install`, then `npm run dev`.
 4. Create the first user in Supabase Auth, then promote that user once in the SQL editor:
