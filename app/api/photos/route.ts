@@ -1,0 +1,3 @@
+import { NextResponse } from "next/server";
+import { requireUser } from "@/lib/user";
+export async function POST(request: Request) { try { const { supabase, user } = await requireUser(); const body = await request.json(); const { error } = await supabase.from("progress_photos").insert({ user_id: user.id, storage_path: body.storagePath, taken_at: body.takenAt, pose: body.pose || null, conditions: body.conditions || null }); if (error) throw error; return NextResponse.json({ ok: true }); } catch (e) { return NextResponse.json({ error: e instanceof Error ? e.message : "Could not save photo" }, { status: 400 }); } }

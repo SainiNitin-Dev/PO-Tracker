@@ -1,0 +1,3 @@
+import { requireUser } from "@/lib/user";
+import PhotoUploader from "./photo-uploader";
+export default async function PhotosPage() { const { supabase } = await requireUser(); const { data: photos } = await supabase.from("progress_photos").select("id,storage_path,taken_at,pose,conditions").order("taken_at", { ascending: false }); const signed = await Promise.all((photos ?? []).map(async (photo) => { const { data } = await supabase.storage.from("progress-photos").createSignedUrl(photo.storage_path, 3600); return { ...photo, url: data?.signedUrl ?? null }; })); return <PhotoUploader photos={signed} />; }
