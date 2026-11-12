@@ -1,0 +1,3 @@
+import { NextResponse } from "next/server";
+import { requireUser } from "@/lib/user";
+export async function POST(request: Request) { try { const { supabase } = await requireUser(); const body = await request.json(); const { data, error } = await supabase.from("program_days").insert({ program_id: body.programId, name: body.name, weekday: Number(body.weekday), sort_order: Number(body.sortOrder) }).select("id").single(); if (error) throw error; return NextResponse.json(data); } catch (e) { return NextResponse.json({ error: e instanceof Error ? e.message : "Could not add day" }, { status: 400 }); } }
