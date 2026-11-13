@@ -5,6 +5,7 @@ import PwaRegister from "@/components/pwa-register";
 import MobileNav from "@/components/mobile-nav";
 import RouteFeedback from "@/components/route-feedback";
 import OperationFeedback from "@/components/operation-feedback";
+import { Analytics } from "@vercel/analytics/next";
 
 export const metadata: Metadata = {
   title: { default: "Progressive", template: "%s · Progressive" },
@@ -47,6 +48,7 @@ export default async function RootLayout({
         <div id="main-content" tabIndex={-1}>
           {children}
         </div>
+        <Analytics />
       </body>
     </html>
   );
