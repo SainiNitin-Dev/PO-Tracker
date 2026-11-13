@@ -29,7 +29,8 @@ export async function POST(request: Request) {
     if (body.action === "set") {
       const { data: owned } = await supabase.from("workout_exercises").select("id, session:workout_sessions!inner(user_id)").eq("id", body.workoutExerciseId).eq("session.user_id", user.id).single();
       if (!owned) throw new Error("Workout exercise not found");
-      const { error } = await supabase.from("workout_sets").upsert({ workout_exercise_id: body.workoutExerciseId, set_number: Number(body.setNumber), set_kind: body.setKind, weight_kg: body.weightKg === "" ? null : Number(body.weightKg), reps: body.reps === "" ? null : Number(body.reps), duration_seconds: body.durationSeconds === "" ? null : Number(body.durationSeconds), rir: body.rir === "" ? null : Number(body.rir) }, { onConflict: "workout_exercise_id,set_number" });
+      const optionalNumber = (value: unknown) => value === "" || value === null || value === undefined ? null : Number(value);
+      const { error } = await supabase.from("workout_sets").upsert({ workout_exercise_id: body.workoutExerciseId, set_number: Number(body.setNumber), set_kind: body.setKind, weight_kg: optionalNumber(body.weightKg), reps: optionalNumber(body.reps), duration_seconds: optionalNumber(body.durationSeconds), rir: optionalNumber(body.rir) }, { onConflict: "workout_exercise_id,set_number" });
       if (error) throw error; return NextResponse.json({ ok: true });
     }
     if (body.action === "complete") {
