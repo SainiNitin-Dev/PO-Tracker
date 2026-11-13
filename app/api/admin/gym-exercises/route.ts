@@ -10,3 +10,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   } catch (e) { return NextResponse.json({ error: e instanceof Error ? e.message : "Unauthorized" }, { status: 400 }); }
 }
+export async function DELETE(request: Request) { try { const { supabase } = await requireAdmin(); const { id } = await request.json(); const { error } = await supabase.from("gym_exercises").delete().eq("id", id); if (error) throw error; return NextResponse.json({ ok: true }); } catch (e) { const message = e instanceof Error ? e.message : typeof e === "object" && e && "message" in e ? String(e.message) : "Could not remove gym exercise"; return NextResponse.json({ error: message }, { status: 400 }); } }
