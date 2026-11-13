@@ -1,17 +1,18 @@
-const CACHE = "progressive-v2";
-const STORE = "progressive-offline";
-self.addEventListener("install", (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(["/", "/workout", "/program"]))));
-self.addEventListener("activate", (event) => event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("progressive-") && key !== CACHE && key !== STORE).map((key) => caches.delete(key)))).then(() => self.clients.claim())));
-self.addEventListener("fetch", (event) => {
+/* Cache public assets only. Never store account pages, API responses or mutations. */
+const CACHE = "progressive-public-v3";
+const PUBLIC_ASSETS = ["/offline.html", "/progressive-logo.png"];
+self.addEventListener("install", event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(PUBLIC_ASSETS)).then(() => self.skipWaiting())));
+self.addEventListener("activate", event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith("progressive-") && key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())));
+self.addEventListener("fetch", event => {
   const request = event.request;
-  if (request.method === "POST" && new URL(request.url).pathname === "/api/workouts") {
-    event.respondWith(fetch(request.clone()).catch(async () => { await queue(request); return new Response(JSON.stringify({ ok: true, queued: true }), { status: 202, headers: { "Content-Type": "application/json" } }); }));
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin || request.method !== "GET") return;
+  if (request.mode === "navigate") {
+    event.respondWith(fetch(request).catch(() => caches.match("/offline.html")));
     return;
   }
-  if (request.method === "GET" && new URL(request.url).origin === self.location.origin) event.respondWith(fetch(request).then((response) => { const copy = response.clone(); caches.open(CACHE).then((cache) => cache.put(request, copy)); return response; }).catch(() => caches.match(request)));
+  if (PUBLIC_ASSETS.includes(url.pathname) && !url.search) {
+    event.respondWith(caches.match(request).then(cached => cached || fetch(request)));
+  }
 });
-self.addEventListener("sync", (event) => { if (event.tag === "sync-workouts") event.waitUntil(flush()); });
-self.addEventListener("message", (event) => { if (event.data === "sync-workouts") flush(); });
-function db() { return new Promise((resolve, reject) => { const request = indexedDB.open(STORE, 1); request.onupgradeneeded = () => request.result.createObjectStore("requests", { autoIncrement: true }); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); }
-async function queue(request) { const database = await db(); const body = await request.text(); await new Promise((resolve, reject) => { const transaction = database.transaction("requests", "readwrite"); transaction.objectStore("requests").add({ url: request.url, body, headers: [...request.headers] }); transaction.oncomplete = resolve; transaction.onerror = reject; }); if (self.registration.sync) await self.registration.sync.register("sync-workouts"); }
-async function flush() { const database = await db(); const items = await new Promise((resolve, reject) => { const transaction = database.transaction("requests", "readonly"); const request = transaction.objectStore("requests").getAll(); request.onsuccess = () => resolve(request.result); request.onerror = reject; }); for (const item of items) { const response = await fetch(item.url, { method: "POST", headers: item.headers, body: item.body }); if (!response.ok) return; } await new Promise((resolve, reject) => { const transaction = database.transaction("requests", "readwrite"); transaction.objectStore("requests").clear(); transaction.oncomplete = resolve; transaction.onerror = reject; }); }
+// Old ownerless mutation queues are deliberately never replayed under a new session.

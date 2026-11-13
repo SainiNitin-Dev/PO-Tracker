@@ -1,22 +1,42 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/user";
+import { requireApiUser } from "@/lib/user";
+import { apiError, HttpError, readJson, textValue, uuid } from "@/lib/http";
 
-export async function POST(request: Request) {
+async function savePlan(request: Request) {
   try {
-    const { supabase, user } = await requireUser();
-    const { name } = await request.json();
-    await supabase.from("programs").update({ is_active: false }).eq("user_id", user.id).eq("is_active", true);
-    const { data, error } = await supabase.from("programs").insert({ user_id: user.id, name, is_active: true }).select("id").single();
+    const { supabase } = await requireApiUser();
+    const body = await readJson(request);
+    const id = request.method === "PATCH" ? uuid(body.id, "Plan") : null;
+    const name = textValue(body.name, "Plan name", { max: 100 });
+    const { data, error } = await supabase.rpc("save_training_plan", {
+      p_id: id,
+      p_name: name,
+      p_activate: body.activate !== false,
+    });
     if (error) throw error;
-    return NextResponse.json(data);
-  } catch (e) { return NextResponse.json({ error: e instanceof Error ? e.message : "Could not create program" }, { status: 400 }); }
+    return NextResponse.json({ id: data });
+  } catch (error) {
+    return apiError(error);
+  }
 }
+export const POST = savePlan;
+export const PATCH = savePlan;
 
 export async function DELETE(request: Request) {
   try {
-    const { supabase, user } = await requireUser(); const { id } = await request.json();
-    const { error } = await supabase.from("programs").delete().eq("id", id).eq("user_id", user.id);
+    const { supabase, user } = await requireApiUser();
+    const body = await readJson(request);
+    const { data, error } = await supabase
+      .from("programs")
+      .delete()
+      .eq("id", uuid(body.id, "Plan"))
+      .eq("user_id", user.id)
+      .select("id")
+      .maybeSingle();
     if (error) throw error;
+    if (!data) throw new HttpError(404, "This plan is no longer available.");
     return NextResponse.json({ ok: true });
-  } catch (e) { return NextResponse.json({ error: e instanceof Error ? e.message : "Could not delete program" }, { status: 400 }); }
+  } catch (error) {
+    return apiError(error);
+  }
 }

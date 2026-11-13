@@ -1,42 +1,135 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/user";
-import { getSuggestion } from "@/lib/progression";
+import { requireApiUser } from "@/lib/user";
+import { apiError, HttpError, readJson, uuid, textValue } from "@/lib/http";
+import { loadActiveWorkout } from "@/lib/workout-data";
+import {
+  optionalTrainingNumber,
+  validateSet,
+  TrainingValidationError,
+} from "@/lib/training-validation";
+import type { TrackingType } from "@/lib/progression";
 
-function errorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "object" && error && "message" in error) return String(error.message);
-  return "Could not save workout. Please try again.";
+export async function GET() {
+  try {
+    const { supabase, user } = await requireApiUser();
+    return NextResponse.json(
+      { workout: await loadActiveWorkout(supabase, user.id) },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  } catch (error) {
+    return apiError(
+      error instanceof TrainingValidationError
+        ? new HttpError(400, error.message)
+        : error,
+    );
+  }
 }
 
 export async function POST(request: Request) {
   try {
-    const { supabase, user } = await requireUser();
-    const body = await request.json();
-    if (body.action === "suggestion") {
-      const { data: prior } = await supabase.from("workout_exercises").select("id,workout_sets(weight_kg,reps,duration_seconds,rir,set_kind),workout_sessions!inner(user_id,status,performed_at,notes)").eq("gym_exercise_id", body.gymExerciseId).eq("workout_sessions.user_id", user.id).eq("workout_sessions.status", "completed").order("performed_at", { referencedTable: "workout_sessions", ascending: false }).limit(1).maybeSingle();
-      const session = Array.isArray(prior?.workout_sessions) ? prior?.workout_sessions[0] : prior?.workout_sessions;
-      const sets = (prior?.workout_sets ?? []).map((set) => ({ weightKg: set.weight_kg, reps: set.reps, durationSeconds: set.duration_seconds, rir: set.rir, setKind: set.set_kind }));
-      return NextResponse.json(getSuggestion({ trackingType: body.trackingType, incrementKg: Number(body.incrementKg), repMin: body.repMin, repMax: body.repMax, timeTargetSeconds: body.timeTargetSeconds, latestSets: sets, painNote: /pain|sharp|joint/i.test(session?.notes ?? "") }));
-    }
+    const { supabase, user } = await requireApiUser();
+    const body = await readJson(request);
     if (body.action === "start") {
-      const { data: session, error } = await supabase.from("workout_sessions").insert({ user_id: user.id, gym_id: body.gymId, program_day_id: body.programDayId }).select("id").single();
+      const { error } = await supabase.rpc("start_training_workout", {
+        p_gym_id: uuid(body.gymId, "Gym"),
+        p_day_id: uuid(body.programDayId, "Training day"),
+      });
       if (error) throw error;
-      const rows = body.exercises.map((exercise: { gymExerciseId: string; programExerciseId: string | null }, index: number) => ({ session_id: session.id, gym_exercise_id: exercise.gymExerciseId, program_exercise_id: exercise.programExerciseId, sort_order: index }));
-      const { data: workoutExercises, error: exerciseError } = rows.length ? await supabase.from("workout_exercises").insert(rows).select("id,program_exercise_id") : { data: [], error: null };
-      if (exerciseError) throw exerciseError;
-      return NextResponse.json({ ...session, workoutExercises });
+      return NextResponse.json({
+        workout: await loadActiveWorkout(supabase, user.id),
+      });
     }
-    if (body.action === "set") {
-      const { data: owned } = await supabase.from("workout_exercises").select("id, session:workout_sessions!inner(user_id)").eq("id", body.workoutExerciseId).eq("session.user_id", user.id).single();
-      if (!owned) throw new Error("Workout exercise not found");
-      const optionalNumber = (value: unknown) => value === "" || value === null || value === undefined ? null : Number(value);
-      const { error } = await supabase.from("workout_sets").upsert({ workout_exercise_id: body.workoutExerciseId, set_number: Number(body.setNumber), set_kind: body.setKind, weight_kg: optionalNumber(body.weightKg), reps: optionalNumber(body.reps), duration_seconds: optionalNumber(body.durationSeconds), rir: optionalNumber(body.rir) }, { onConflict: "workout_exercise_id,set_number" });
-      if (error) throw error; return NextResponse.json({ ok: true });
+    if (
+      body.action === "set" ||
+      body.action === "delete-set" ||
+      body.action === "feedback"
+    ) {
+      const exerciseId = uuid(body.workoutExerciseId, "Exercise");
+      const { data: owned, error: ownedError } = await supabase
+        .from("workout_exercises")
+        .select(
+          "id,session:workout_sessions!inner(user_id,status),equipment:gym_exercises(exercise:exercises(tracking_type))",
+        )
+        .eq("id", exerciseId)
+        .eq("session.user_id", user.id)
+        .eq("session.status", "in_progress")
+        .maybeSingle();
+      if (ownedError) throw ownedError;
+      if (!owned)
+        throw new HttpError(
+          404,
+          "This workout is no longer open. Refresh to see its latest status.",
+        );
+      if (body.action === "feedback") {
+        const pump = optionalTrainingNumber(
+          body.pumpRating,
+          "Muscle pump",
+          1,
+          5,
+          true,
+        );
+        const notes = body.notes
+          ? textValue(body.notes, "Exercise notes", { max: 1000 })
+          : null;
+        const { error } = await supabase
+          .from("workout_exercises")
+          .update({ pump_rating: pump, notes })
+          .eq("id", exerciseId);
+        if (error) throw error;
+        return NextResponse.json({ ok: true });
+      }
+      const setId = uuid(body.setId, "Set");
+      if (body.action === "delete-set") {
+        const { error } = await supabase
+          .from("workout_sets")
+          .delete()
+          .eq("id", setId)
+          .eq("workout_exercise_id", exerciseId);
+        if (error) throw error;
+        return NextResponse.json({ ok: true });
+      }
+      const equipment = Array.isArray(owned.equipment)
+        ? owned.equipment[0]
+        : owned.equipment;
+      const exercise = Array.isArray(equipment?.exercise)
+        ? equipment.exercise[0]
+        : equipment?.exercise;
+      const values = validateSet(body, exercise?.tracking_type as TrackingType);
+      const { data, error } = await supabase.rpc("save_training_set", {
+        p_exercise_id: exerciseId,
+        p_id: setId,
+        p_kind: values.kind,
+        p_weight: values.weight,
+        p_reps: values.reps,
+        p_seconds: values.seconds,
+        p_rir: values.rir,
+      });
+      if (error) throw error;
+      return NextResponse.json({ set: data });
     }
-    if (body.action === "complete") {
-      const { error } = await supabase.from("workout_sessions").update({ status: "completed", completed_at: new Date().toISOString(), notes: body.notes || null, bodyweight_kg: body.bodyweightKg ? Number(body.bodyweightKg) : null }).eq("id", body.sessionId).eq("user_id", user.id);
-      if (error) throw error; return NextResponse.json({ ok: true });
+    if (body.action === "complete" || body.action === "abandon") {
+      const { error } = await supabase.rpc("finish_training_workout", {
+        p_id: uuid(body.sessionId, "Workout"),
+        p_abandon: body.action === "abandon",
+        p_notes: body.notes
+          ? textValue(body.notes, "Workout notes", { max: 2000 })
+          : "",
+        p_bodyweight: optionalTrainingNumber(
+          body.bodyweightKg,
+          "Body weight",
+          20,
+          500,
+        ),
+      });
+      if (error) throw error;
+      return NextResponse.json({ ok: true });
     }
-    throw new Error("Unknown workout action");
-  } catch (e) { return NextResponse.json({ error: errorMessage(e) }, { status: 400 }); }
+    throw new HttpError(400, "Unknown workout action.");
+  } catch (error) {
+    return apiError(
+      error instanceof TrainingValidationError
+        ? new HttpError(400, error.message)
+        : error,
+    );
+  }
 }

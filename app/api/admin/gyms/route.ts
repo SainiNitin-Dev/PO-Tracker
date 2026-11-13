@@ -1,5 +1,60 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth";
-const message = (error: unknown) => error instanceof Error ? error.message : typeof error === "object" && error && "message" in error ? String(error.message) : "Unauthorized";
-export async function POST(request: Request) { try { const { supabase } = await requireAdmin(); const { name, weightIncrementKg } = await request.json(); const { error } = await supabase.from("gyms").insert({ name, weight_increment_kg: Number(weightIncrementKg) }); if (error) throw error; return NextResponse.json({ ok: true }); } catch (e) { return NextResponse.json({ error: message(e) }, { status: 400 }); } }
-export async function DELETE(request: Request) { try { const { supabase } = await requireAdmin(); const { id, all } = await request.json(); const now = new Date().toISOString(); if (all) { const { error: mappingsError } = await supabase.from("gym_exercises").update({ archived_at: now }).is("archived_at", null); if (mappingsError) throw mappingsError; const { error } = await supabase.from("gyms").update({ archived_at: now }).is("archived_at", null); if (error) throw error; } else { const { error: mappingsError } = await supabase.from("gym_exercises").update({ archived_at: now }).eq("gym_id", id); if (mappingsError) throw mappingsError; const { error } = await supabase.from("gyms").update({ archived_at: now }).eq("id", id); if (error) throw error; } return NextResponse.json({ ok: true }); } catch (e) { return NextResponse.json({ error: message(e) }, { status: 400 }); } }
+import { requireAdminApi } from "@/lib/auth";
+import {
+  apiError,
+  archiveSelection,
+  HttpError,
+  numberValue,
+  readJson,
+  textValue,
+  uuid,
+} from "@/lib/http";
+
+async function save(request: Request, editing: boolean) {
+  try {
+    const { supabase } = await requireAdminApi();
+    const body = await readJson(request);
+    const values = {
+      name: textValue(body.name, "Gym name"),
+      weight_increment_kg: numberValue(
+        body.weightIncrementKg,
+        "Smallest weight jump",
+        { min: 0.01, max: 100 },
+      ),
+    };
+    const result = editing
+      ? await supabase
+          .from("gyms")
+          .update(values)
+          .eq("id", uuid(body.id))
+          .is("archived_at", null)
+          .select("id")
+          .single()
+      : await supabase.from("gyms").insert(values).select("id").single();
+    if (result.error) throw result.error;
+    if (!result.data)
+      throw new HttpError(404, "This gym is no longer available.");
+    return NextResponse.json({ ok: true, id: result.data.id });
+  } catch (error) {
+    return apiError(error);
+  }
+}
+
+export const POST = (request: Request) => save(request, false);
+export const PATCH = (request: Request) => save(request, true);
+
+export async function DELETE(request: Request) {
+  try {
+    const { supabase } = await requireAdminApi();
+    const { itemId, allItems } = archiveSelection(await readJson(request));
+    const { data, error } = await supabase.rpc("archive_catalog", {
+      catalog: "gyms",
+      item_id: itemId,
+      all_items: allItems,
+    });
+    if (error) throw error;
+    return NextResponse.json({ ok: true, count: data });
+  } catch (error) {
+    return apiError(error);
+  }
+}
