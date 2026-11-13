@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/user";
 import { getSuggestion } from "@/lib/progression";
 
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error && "message" in error) return String(error.message);
+  return "Could not save workout. Please try again.";
+}
+
 export async function POST(request: Request) {
   try {
     const { supabase, user } = await requireUser();
@@ -31,5 +37,5 @@ export async function POST(request: Request) {
       if (error) throw error; return NextResponse.json({ ok: true });
     }
     throw new Error("Unknown workout action");
-  } catch (e) { return NextResponse.json({ error: e instanceof Error ? e.message : "Could not save workout" }, { status: 400 }); }
+  } catch (e) { return NextResponse.json({ error: errorMessage(e) }, { status: 400 }); }
 }
