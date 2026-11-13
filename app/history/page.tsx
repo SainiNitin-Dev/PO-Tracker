@@ -1,24 +1,105 @@
+import Link from "next/link";
 import { requireUser } from "@/lib/user";
-import { estimateOneRepMax } from "@/lib/progression";
-
-type Set = { weight_kg: number | null; reps: number | null; duration_seconds: number | null; set_kind: string };
-export default async function HistoryPage() {
+import { type HistorySession, type HistorySet } from "@/lib/history";
+import HistoryList from "./history-list";
+type Relation<T> = T | T[] | null;
+const one = <T,>(value: Relation<T>) =>
+  Array.isArray(value) ? value[0] : value;
+type Raw = {
+  id: string;
+  performed_at: string;
+  status: string;
+  notes: string | null;
+  bodyweight_kg: number | null;
+  gym: Relation<{ name: string }>;
+  day: Relation<{ name: string }>;
+  workout_exercises: {
+    id: string;
+    sort_order: number;
+    gym_exercise_id: string;
+    pump_rating: number | null;
+    notes: string | null;
+    equipment: Relation<{
+      equipment_label: string | null;
+      exercise: Relation<{ name: string; tracking_type: string }>;
+    }>;
+    workout_sets: HistorySet[];
+    exercise_soreness_feedback: Relation<{ soreness_rating: number }>;
+  }[];
+};
+export default async function HistoryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   const { supabase, user } = await requireUser();
-  const { data: rows } = await supabase.from("workout_exercises").select("id,gym_exercise_id,workout_sets(weight_kg,reps,duration_seconds,set_kind),workout_sessions!inner(user_id,status,performed_at)").eq("workout_sessions.user_id", user.id).eq("workout_sessions.status", "completed").order("performed_at", { referencedTable: "workout_sessions", ascending: false }).limit(200);
-  const gymIds = (rows ?? []).map((row) => row.gym_exercise_id);
-  const { data: gymExercises } = gymIds.length ? await supabase.from("gym_exercises").select("id,equipment_label,exercise:exercises(name,tracking_type),gym:gyms(name)").in("id", gymIds) : { data: [] };
-  const stats = new Map<string, { name: string; gym: string; bestWeight: number; bestReps: number; bestTime: number; bestE1rm: number; latest: string }>();
-  for (const row of rows ?? []) {
-    const linked = (gymExercises ?? []).find((item) => item.id === row.gym_exercise_id);
-    const exercise = Array.isArray(linked?.exercise) ? linked?.exercise[0] : linked?.exercise;
-    const gym = Array.isArray(linked?.gym) ? linked?.gym[0] : linked?.gym;
-    const session = Array.isArray(row.workout_sessions) ? row.workout_sessions[0] : row.workout_sessions;
-    if (!exercise || !session) continue;
-    const key = row.gym_exercise_id;
-    const current = stats.get(key) ?? { name: exercise.name, gym: gym?.name ?? "Gym", bestWeight: 0, bestReps: 0, bestTime: 0, bestE1rm: 0, latest: session.performed_at };
-    for (const set of (row.workout_sets as Set[] ?? []).filter((set) => set.set_kind === "working")) { current.bestWeight = Math.max(current.bestWeight, Number(set.weight_kg ?? 0)); current.bestReps = Math.max(current.bestReps, Number(set.reps ?? 0)); current.bestTime = Math.max(current.bestTime, Number(set.duration_seconds ?? 0)); if (set.weight_kg && set.reps) current.bestE1rm = Math.max(current.bestE1rm, estimateOneRepMax(Number(set.weight_kg), Number(set.reps))); }
-    if (session.performed_at > current.latest) current.latest = session.performed_at;
-    stats.set(key, current);
-  }
-  return <main className="mx-auto max-w-xl space-y-6 p-5 pb-24"><header><p className="text-sm font-medium text-lime-400">HISTORY</p><h1 className="text-3xl font-bold">Personal records</h1><p className="mt-2 text-sm text-zinc-400">Records are specific to an exercise at a gym or machine.</p></header>{stats.size ? <section className="space-y-3">{[...stats.values()].sort((a, b) => b.latest.localeCompare(a.latest)).map((stat) => <article className="rounded-xl border border-zinc-800 p-4" key={`${stat.name}-${stat.gym}`}><div className="flex justify-between gap-3"><div><h2 className="font-semibold">{stat.name}</h2><p className="text-sm text-zinc-400">{stat.gym}</p></div><p className="text-xs text-zinc-500">Last logged {new Date(stat.latest).toLocaleDateString()}</p></div><div className="mt-4 grid grid-cols-3 gap-2 text-center text-sm"><div className="rounded bg-zinc-900 p-2"><strong className="block text-lg">{stat.bestWeight || "—"}</strong>kg best load</div><div className="rounded bg-zinc-900 p-2"><strong className="block text-lg">{stat.bestReps || stat.bestTime || "—"}</strong>{stat.bestTime ? " sec" : " reps"}</div><div className="rounded bg-zinc-900 p-2"><strong className="block text-lg">{stat.bestE1rm || "—"}</strong>kg e1RM</div></div></article>)}</section> : <section className="rounded-xl bg-zinc-900 p-5 text-sm text-zinc-400">Complete a workout with working sets to see your exercise history and PRs here.</section>}</main>;
+  const params = await searchParams;
+  const page = Math.max(
+    1,
+    Math.min(10000, Number.parseInt(params.page ?? "1", 10) || 1),
+  );
+  const { data, error, count } = await supabase
+    .from("workout_sessions")
+    .select(
+      "id,performed_at,status,notes,bodyweight_kg,gym:gyms(name),day:program_days(name),workout_exercises(id,sort_order,gym_exercise_id,pump_rating,notes,equipment:gym_exercises(equipment_label,exercise:exercises(name,tracking_type)),workout_sets(id,set_number,set_kind,weight_kg,reps,duration_seconds,rir),exercise_soreness_feedback(soreness_rating))",
+      { count: "exact" },
+    )
+    .eq("user_id", user.id)
+    .in("status", ["completed", "abandoned"])
+    .order("performed_at", { ascending: false })
+    .range((page - 1) * 30, page * 30 - 1);
+  if (error) throw new Error("Your workout history could not be loaded.");
+  const sessions: HistorySession[] = ((data ?? []) as unknown as Raw[]).map(
+    (s) => ({
+      id: s.id,
+      performed_at: s.performed_at,
+      status: s.status,
+      notes: s.notes,
+      bodyweight_kg: s.bodyweight_kg,
+      gym: one(s.gym)?.name ?? "Saved gym",
+      day: one(s.day)?.name ?? "Saved workout",
+      exercises: [...s.workout_exercises]
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map((e) => {
+          const equipment = one(e.equipment);
+          const movement = one(equipment?.exercise ?? null);
+          return {
+            id: e.id,
+            equipmentId: e.gym_exercise_id,
+            name: movement?.name ?? "Archived Exercise",
+            gym: one(s.gym)?.name ?? "Saved gym",
+            equipmentLabel: equipment?.equipment_label ?? null,
+            trackingType: movement?.tracking_type ?? "reps",
+            notes: e.notes,
+            pump: e.pump_rating,
+            soreness:
+              one(e.exercise_soreness_feedback)?.soreness_rating ?? null,
+            sets: [...e.workout_sets].sort(
+              (a, b) => a.set_number - b.set_number,
+            ),
+          };
+        }),
+    }),
+  );
+  return (
+    <>
+      <HistoryList sessions={sessions} />
+      <nav
+        aria-label="History pages"
+        className="mx-auto -mt-24 mb-32 flex max-w-5xl items-center justify-center gap-6 px-5"
+      >
+        {page > 1 && (
+          <Link className="secondary-action" href={`/history?page=${page - 1}`}>
+            Newer workouts
+          </Link>
+        )}
+        <span className="muted text-sm">Page {page}</span>
+        {(count ?? 0) > page * 30 && (
+          <Link className="secondary-action" href={`/history?page=${page + 1}`}>
+            Older workouts
+          </Link>
+        )}
+      </nav>
+    </>
+  );
 }

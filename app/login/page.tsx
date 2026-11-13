@@ -1,5 +1,153 @@
 "use client";
+
+import Link from "next/link";
 import { createBrowserClient } from "@supabase/ssr";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-export default function LoginPage() { const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [loading, setLoading] = useState(false); const router = useRouter(); async function submit(event: React.FormEvent) { event.preventDefault(); setLoading(true); setError(""); const supabase = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!); const { error: signInError } = await supabase.auth.signInWithPassword({ email, password }); if (signInError) { setError(signInError.message); setLoading(false); return; } router.replace("/"); router.refresh(); } return <main className="app-page flex flex-col justify-center"><img src="/progressive-logo.png" alt="Progressive" className="mb-8 w-24 rounded-3xl shadow-2xl"/><p className="eyebrow">Welcome back</p><h1 className="mt-2 text-4xl font-black tracking-tight">Let&apos;s train.</h1><p className="mt-3 text-slate-400">Your workout history and coaching data stay private to you.</p><form onSubmit={submit} className="surface mt-8 space-y-5 p-5"><label className="block text-sm font-semibold">Email<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="mt-2 w-full rounded-2xl p-4"/></label><label className="block text-sm font-semibold">Password<input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="mt-2 w-full rounded-2xl p-4"/></label>{error && <p className="rounded-xl bg-red-400/10 p-3 text-sm text-red-200">{error}</p>}<button disabled={loading} className="primary-action w-full">{loading ? "Signing you in…" : "Log in"}</button></form></main>; }
+import { useMemo, useState } from "react";
+
+export default function LoginPage() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+  const supabase = useMemo(
+    () =>
+      process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+        ? createBrowserClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL,
+            process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+          )
+        : null,
+    [],
+  );
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase) return;
+    setLoading(true);
+    setError("");
+    setMessage("");
+    try {
+      if (recovering) {
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(
+          email.trim(),
+          { redirectTo: `${window.location.origin}/set-password` },
+        );
+        if (resetError) throw resetError;
+        setMessage(
+          "If this email has an account, a password reset link is on its way. Check your inbox and spam folder.",
+        );
+      } else {
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+        if (signInError) {
+          setError(
+            signInError.code === "email_not_confirmed"
+              ? "Open your invitation email to finish setting up your account first."
+              : "We couldn’t log you in. Check your email and password, then try again.",
+          );
+          return;
+        }
+        // A full navigation also clears any prior account's client-side route data.
+        window.location.assign("/");
+      }
+    } catch {
+      setError(
+        "We couldn’t connect. Check your internet connection and try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main className="app-page max-w-md">
+      <Link href="/" className="eyebrow">
+        Progressive
+      </Link>
+      <header className="page-header">
+        <h1>{recovering ? "Reset your password" : "Welcome back"}</h1>
+        <p>
+          {recovering
+            ? "We’ll email you a link to choose a new password."
+            : "A little stronger, one session at a time."}
+        </p>
+      </header>
+      <form onSubmit={submit} className="surface stack" aria-busy={loading}>
+        {!supabase && (
+          <p role="alert" className="status-message" data-tone="error">
+            The app is waiting for its Supabase connection. Add the project URL
+            and publishable key in your deployment settings.
+          </p>
+        )}
+        <label className="field">
+          Email
+          <input
+            required
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="you@example.com"
+            disabled={loading}
+          />
+        </label>
+        {!recovering && (
+          <label className="field">
+            Password
+            <input
+              required
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              disabled={loading}
+            />
+          </label>
+        )}
+        {error && (
+          <p role="alert" className="status-message" data-tone="error">
+            {error}
+          </p>
+        )}
+        {message && (
+          <p role="status" className="status-message" data-tone="success">
+            {message}
+          </p>
+        )}
+        <button
+          disabled={loading || !supabase}
+          className="primary-action w-full"
+        >
+          {loading
+            ? recovering
+              ? "Sending link…"
+              : "Logging in…"
+            : recovering
+              ? "Send reset link"
+              : "Log in"}
+        </button>
+        <button
+          type="button"
+          className="quiet-action w-full"
+          disabled={loading}
+          onClick={() => {
+            setRecovering(!recovering);
+            setError("");
+            setMessage("");
+          }}
+        >
+          {recovering ? "Back to log in" : "Forgot password?"}
+        </button>
+      </form>
+      <p className="mt-6 text-sm text-muted">
+        New here? Open the invitation from your gym administrator to set your
+        password.
+      </p>
+    </main>
+  );
+}

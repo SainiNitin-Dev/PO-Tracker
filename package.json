@@ -7,7 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "test:db": "node scripts/test-database.mjs",
+    "format": "prettier --write app components lib scripts *.ts *.mjs *.json",
+    "format:check": "prettier --check app components lib scripts *.ts *.mjs *.json"
   },
   "dependencies": {
     "@supabase/ssr": "^0.6.1",
@@ -17,15 +21,25 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
     "@types/node": "^22.13.10",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.22.0",
     "eslint-config-next": "^15.2.4",
-    "postcss": "^8.5.3",
+    "postcss": "^8.5.32",
+    "prettier": "^3.10.1",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.2",
-    "vitest": "^3.1.1"
+    "vitest": "^4.1.12"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "$postcss"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.1"
+    }
   }
 }

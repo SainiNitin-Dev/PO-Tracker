@@ -1,13 +1,70 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/auth";
+import {
+  apiError,
+  archiveSelection,
+  HttpError,
+  readJson,
+  textValue,
+  uuid,
+} from "@/lib/http";
 
 export async function POST(request: Request) {
   try {
-    const { supabase } = await requireAdmin();
-    const { gymId, exerciseId, equipmentLabel } = await request.json();
-    const { error } = await supabase.from("gym_exercises").upsert({ gym_id: gymId, exercise_id: exerciseId, equipment_label: equipmentLabel || null, archived_at: null }, { onConflict: "gym_id,exercise_id" });
+    const { supabase } = await requireAdminApi();
+    const body = await readJson(request);
+    const gymId = uuid(body.gymId, "gym");
+    const exerciseId = uuid(body.exerciseId, "exercise");
+    const results = await Promise.all([
+      supabase
+        .from("gyms")
+        .select("id")
+        .eq("id", gymId)
+        .is("archived_at", null)
+        .single(),
+      supabase
+        .from("exercises")
+        .select("id")
+        .eq("id", exerciseId)
+        .is("archived_at", null)
+        .single(),
+    ]);
+    if (results.some((result) => result.error || !result.data))
+      throw new HttpError(400, "Choose an active gym and exercise.");
+    const { error } = await supabase
+      .from("gym_exercises")
+      .upsert(
+        {
+          gym_id: gymId,
+          exercise_id: exerciseId,
+          equipment_label:
+            textValue(body.equipmentLabel ?? "", "Machine label", { min: 0 }) ||
+            null,
+          archived_at: null,
+        },
+        { onConflict: "gym_id,exercise_id" },
+      );
     if (error) throw error;
     return NextResponse.json({ ok: true });
-  } catch (e) { return NextResponse.json({ error: e instanceof Error ? e.message : "Unauthorized" }, { status: 400 }); }
+  } catch (error) {
+    return apiError(error);
+  }
 }
-export async function DELETE(request: Request) { try { const { supabase } = await requireAdmin(); const { id, all } = await request.json(); const query = supabase.from("gym_exercises").update({ archived_at: new Date().toISOString() }); const { error } = all ? await query.is("archived_at", null) : await query.eq("id", id); if (error) throw error; return NextResponse.json({ ok: true }); } catch (e) { const message = e instanceof Error ? e.message : typeof e === "object" && e && "message" in e ? String(e.message) : "Could not archive gym exercise"; return NextResponse.json({ error: message }, { status: 400 }); } }
+
+export async function DELETE(request: Request) {
+  try {
+    const { supabase } = await requireAdminApi();
+    const body = await readJson(request);
+    const { itemId, allItems } = archiveSelection(body);
+    const { data, error } = await supabase.rpc("archive_catalog", {
+      catalog: "gym_exercises",
+      item_id: itemId,
+      all_items: allItems,
+      for_gym: body.gymId === undefined ? null : uuid(body.gymId, "gym"),
+    });
+    if (error) throw error;
+    return NextResponse.json({ ok: true, count: data });
+  } catch (error) {
+    return apiError(error);
+  }
+}
