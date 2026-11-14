@@ -70,7 +70,7 @@ export default function ProgressDashboard({
     <main className="app-page">
       <header className="page-header">
         <p className="eyebrow">The bigger picture</p>
-        <h1>Your work adds up.</h1>
+        <h1>Your progress</h1>
         <p>
           A look at your completed workouts. Progress takes time; use these
           patterns alongside how you feel.
@@ -342,9 +342,7 @@ export default function ProgressDashboard({
               )}
               {e.incomplete ? (
                 <p className="status-message mt-4">
-                  This experiment starts outside the loaded history window.
-                  Comparisons are incomplete, so use your workout history to
-                  review it.
+                  {e.status !== "active" && !e.ended_at ? "This older experiment has no recorded end date. Its results cannot be compared reliably." : "This experiment extends outside the loaded history window. Comparisons are incomplete; review its sessions in workout history."}
                 </p>
               ) : (
                 <>

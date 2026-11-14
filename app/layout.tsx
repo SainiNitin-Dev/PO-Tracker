@@ -7,6 +7,9 @@ import RouteFeedback from "@/components/route-feedback";
 import OperationFeedback from "@/components/operation-feedback";
 import { Analytics } from "@vercel/analytics/next";
 
+// Account-specific navigation and pages must never be generated or cached globally.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: { default: "Progressive", template: "%s · Progressive" },
   description: "Your private strength log and training companion.",

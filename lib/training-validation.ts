@@ -23,6 +23,7 @@ export function optionalTrainingNumber(
   return number;
 }
 export function validateSet(body: Record<string, unknown>, type: TrackingType) {
+  if (!["reps", "bodyweight_reps", "time", "weighted_time"].includes(type)) throw new TrainingValidationError("This exercise’s tracking type is unavailable. Refresh and try again.");
   const timed = type === "time" || type === "weighted_time";
   const weight = optionalTrainingNumber(body.weightKg, "Weight", 0, 9999.99);
   const reps = optionalTrainingNumber(body.reps, "Reps", 1, 1000, true);

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { createBrowserClient } from "@supabase/ssr";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export default function SetPasswordPage() {
   const [password, setPassword] = useState("");
@@ -12,6 +12,7 @@ export default function SetPasswordPage() {
     "loading",
   );
   const [saving, setSaving] = useState(false);
+  const codeExchange = useRef<ReturnType<NonNullable<typeof supabase>["auth"]["exchangeCodeForSession"]> | null>(null);
   const supabase = useMemo(
     () =>
       process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -31,7 +32,7 @@ export default function SetPasswordPage() {
         if (current) {
           setStatus("expired");
           setError(
-            "The app is waiting for its Supabase connection. Ask your administrator to finish the deployment setup.",
+            "Sign-in is not available yet. Ask your administrator to finish setting up the app.",
           );
         }
         return;
@@ -40,6 +41,12 @@ export default function SetPasswordPage() {
         const params = new URLSearchParams(window.location.hash.slice(1));
         const query = new URLSearchParams(window.location.search);
         if (params.has("error") || query.has("error")) throw new Error();
+        const code = query.get("code");
+        if (code) {
+          codeExchange.current ??= supabase.auth.exchangeCodeForSession(code);
+          const { error: codeError } = await codeExchange.current;
+          if (codeError) throw codeError;
+        }
         // Admin invitations use an implicit token link, while the SSR client
         // uses PKCE. Explicitly establish the invite session for both browsers.
         const accessToken = params.get("access_token");

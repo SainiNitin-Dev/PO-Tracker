@@ -114,7 +114,7 @@ try {
   );
   const plan = await scalar("select save_training_plan(null,'Plan A',true)");
   const day = await scalar("select add_training_day($1,'Push',1)", [plan]);
-  const entry = await scalar(
+  await scalar(
     "select add_training_exercise($1,$2,2,6,10,null)",
     [day, movement],
   );
@@ -159,6 +159,13 @@ try {
     [workout, timedEquipment],
   );
   const setId = randomUUID();
+  await denied("cannot finish without a working set", "select finish_training_workout($1,false,'',null)", [workout]);
+  await db.query("select save_training_feedback($1,3,'Seat position 2')", [we]);
+  await equal("exercise feedback persists", "select pump_rating from workout_exercises where id=$1", 3, [we]);
+  const removableSet = randomUUID();
+  await db.query("select save_training_set($1,$2,'working',40,8,null,2)", [we, removableSet]);
+  await db.query("select delete_training_set($1,$2)", [we, removableSet]);
+  await equal("last set can be deleted from an open workout", "select count(*)::int from workout_sets where workout_exercise_id=$1", 0, [we]);
   await db.query("select save_training_set($1,$2,'working',50,8,null,2)", [
     we,
     setId,
@@ -295,6 +302,8 @@ try {
     "select save_training_set($1,$2,'working',50,8,null,1)",
     [we, randomUUID()],
   );
+  await denied("finished workout rejects set deletion", "select delete_training_set($1,$2)", [we,setId]);
+  await denied("finished workout rejects feedback edits", "select save_training_feedback($1,2,'Changed')", [we]);
   await db.query("delete from programs where id=$1", [plan]);
   await equal(
     "plan deletion keeps workout history",

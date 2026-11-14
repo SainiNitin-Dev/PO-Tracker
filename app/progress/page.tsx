@@ -79,7 +79,7 @@ export default async function ProgressPage() {
     ...e,
     comparison: compareExperiment(e, records, mappings.data ?? [], now),
     incomplete:
-      Date.parse(e.started_on) < now - 180 * 86400000 || records.length === 300,
+      (e.status !== "active" && !e.ended_at) || Date.parse(e.started_on) < now - 180 * 86400000 || records.length === 300,
   }));
   return (
     <ProgressDashboard

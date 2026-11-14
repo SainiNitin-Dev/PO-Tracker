@@ -130,7 +130,7 @@ export default function AdminConsole({
     <main className="app-page">
       <header className="page-header">
         <p className="eyebrow">Gym management</p>
-        <h1>A good place to start.</h1>
+        <h1>Gym catalog</h1>
         <p>
           Set up your gyms, organize exercises, and invite your members. Their
           training logs and photos stay private.

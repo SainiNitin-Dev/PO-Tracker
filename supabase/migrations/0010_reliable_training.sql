@@ -79,6 +79,9 @@ create or replace function public.save_training_set(p_exercise_id uuid,p_id uuid
 language plpgsql set search_path = public as $$
 declare owned public.workout_exercises; existing public.workout_sets; result public.workout_sets; next_number integer;
 begin
+  -- Serialize all saves with finishing the same session, across tabs/devices.
+  perform 1 from public.workout_sessions s join public.workout_exercises we on we.session_id=s.id
+    where we.id=p_exercise_id and s.user_id=auth.uid() for update of s;
   select we.* into owned from public.workout_exercises we join public.workout_sessions s on s.id=we.session_id
     where we.id=p_exercise_id and s.user_id=auth.uid() and s.status='in_progress' for update of we;
   if owned.id is null or public.is_admin() then raise exception 'This workout is not open or does not belong to you.'; end if;
@@ -104,6 +107,29 @@ begin
   if not p_abandon and not exists(select 1 from public.workout_sets ws join public.workout_exercises we on we.id=ws.workout_exercise_id where we.session_id=p_id and ws.set_kind='working') then raise exception 'Log at least one working set before finishing, or end without completing.'; end if;
   update public.workout_sessions set status=case when p_abandon then 'abandoned'::public.session_status else 'completed'::public.session_status end,
     completed_at=now(),notes=nullif(trim(p_notes),''),bodyweight_kg=p_bodyweight where id=p_id;
+end;
+$$;
+
+create or replace function public.delete_training_set(p_exercise_id uuid,p_id uuid) returns void
+language plpgsql set search_path = public as $$
+declare session_status public.session_status;
+begin
+  select s.status into session_status from public.workout_sessions s join public.workout_exercises we on we.session_id=s.id
+    where we.id=p_exercise_id and s.user_id=auth.uid() for update of s;
+  if session_status is distinct from 'in_progress' or public.is_admin() then raise exception 'Only an open workout can be changed.'; end if;
+  delete from public.workout_sets where id=p_id and workout_exercise_id=p_exercise_id;
+end;
+$$;
+
+create or replace function public.save_training_feedback(p_exercise_id uuid,p_pump integer,p_notes text) returns void
+language plpgsql set search_path = public as $$
+declare session_status public.session_status;
+begin
+  select s.status into session_status from public.workout_sessions s join public.workout_exercises we on we.session_id=s.id
+    where we.id=p_exercise_id and s.user_id=auth.uid() for update of s;
+  if session_status is distinct from 'in_progress' or public.is_admin() then raise exception 'Only an open workout can be changed.'; end if;
+  if length(p_notes)>1000 then raise exception 'Exercise notes must be at most 1000 characters.'; end if;
+  update public.workout_exercises set pump_rating=p_pump,notes=nullif(trim(p_notes),'') where id=p_exercise_id;
 end;
 $$;
 
@@ -182,5 +208,7 @@ begin
 end;
 $$;
 
+revoke all on function public.delete_training_set(uuid,uuid), public.save_training_feedback(uuid,integer,text) from public, anon;
+grant execute on function public.delete_training_set(uuid,uuid), public.save_training_feedback(uuid,integer,text) to authenticated;
 revoke all on function public.start_training_workout(uuid,uuid), public.save_training_set(uuid,uuid,public.set_kind,numeric,integer,integer,integer), public.finish_training_workout(uuid,boolean,text,numeric), public.save_training_plan(uuid,text,boolean), public.add_training_day(uuid,text,integer), public.add_training_exercise(uuid,uuid,integer,integer,integer,integer), public.move_training_item(text,uuid,integer) from public, anon;
 grant execute on function public.start_training_workout(uuid,uuid), public.save_training_set(uuid,uuid,public.set_kind,numeric,integer,integer,integer), public.finish_training_workout(uuid,boolean,text,numeric), public.save_training_plan(uuid,text,boolean), public.add_training_day(uuid,text,integer), public.add_training_exercise(uuid,uuid,integer,integer,integer,integer), public.move_training_item(text,uuid,integer) to authenticated;

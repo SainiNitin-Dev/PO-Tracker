@@ -71,20 +71,13 @@ export async function POST(request: Request) {
         const notes = body.notes
           ? textValue(body.notes, "Exercise notes", { max: 1000 })
           : null;
-        const { error } = await supabase
-          .from("workout_exercises")
-          .update({ pump_rating: pump, notes })
-          .eq("id", exerciseId);
+        const { error } = await supabase.rpc("save_training_feedback", {p_exercise_id: exerciseId, p_pump: pump, p_notes: notes});
         if (error) throw error;
         return NextResponse.json({ ok: true });
       }
       const setId = uuid(body.setId, "Set");
       if (body.action === "delete-set") {
-        const { error } = await supabase
-          .from("workout_sets")
-          .delete()
-          .eq("id", setId)
-          .eq("workout_exercise_id", exerciseId);
+        const { error } = await supabase.rpc("delete_training_set", {p_exercise_id: exerciseId, p_id: setId});
         if (error) throw error;
         return NextResponse.json({ ok: true });
       }

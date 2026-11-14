@@ -134,7 +134,7 @@ export default function ProfileCard({
     <main className="app-page">
       <header className="page-header">
         <p className="eyebrow">Your account</p>
-        <h1>A space for you.</h1>
+        <h1>Your profile</h1>
         <p>
           Manage your details, track your body weight, and make yourself at
           home.
@@ -170,6 +170,7 @@ export default function ProfileCard({
                 {new Date(createdAt).toLocaleDateString("en-IN", {
                   month: "short",
                   year: "numeric",
+                  timeZone: "Asia/Kolkata",
                 })}
               </p>
             </div>
