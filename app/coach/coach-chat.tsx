@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState, useTransition } from "react";
 import type { TrainingFact } from "@/lib/coach/training-facts";
 
 type ChatMessage = {
@@ -34,10 +35,18 @@ async function coachRequest(method: string, body: Record<string, unknown>) {
 }
 
 export default function CoachChat({
+  chatId,
+  chats,
+  page,
+  hasOlderChats,
   initialMessages,
   initialNotes,
   configured,
 }: {
+  chatId: string | null;
+  chats: { id: string; title: string | null; created_at: string }[];
+  page: number;
+  hasOlderChats: boolean;
   initialMessages: ChatMessage[];
   initialNotes: Note[];
   configured: boolean;
@@ -55,6 +64,14 @@ export default function CoachChat({
   const [noteDraft, setNoteDraft] = useState("");
   const [editingNote, setEditingNote] = useState<string | null>(null);
   const [clearConfirm, setClearConfirm] = useState(false);
+  const [chatAction, setChatAction] = useState<"create" | "delete" | null>(
+    null,
+  );
+  const [navigating, startNavigation] = useTransition();
+  const router = useRouter();
+  const chatBusy = busy || noteBusy || Boolean(chatAction) || navigating;
+  const chatUrl = (id: string, listPage = page) =>
+    `/coach?chat=${id}&page=${listPage}`;
   const [status, setStatus] = useState("");
   const end = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
@@ -68,7 +85,7 @@ export default function CoachChat({
   }, [messages, busy]);
 
   const send = async (retry = false) => {
-    if (busy || !configured) return;
+    if (chatBusy || !configured || !chatId || (pending && !retry)) return;
     const draft =
       retry && pending
         ? pending
@@ -83,6 +100,7 @@ export default function CoachChat({
       const data = await coachRequest("POST", {
         message: draft.text,
         requestId: draft.id,
+        chatId,
       });
       const now = new Date().toISOString();
       setMessages((old) => [
@@ -102,6 +120,7 @@ export default function CoachChat({
         },
       ]);
       setPending(null);
+      if (!messages.length) router.refresh();
     } catch (failure) {
       setError(
         failure instanceof Error && failure.name !== "TimeoutError"
@@ -163,25 +182,32 @@ export default function CoachChat({
       setNoteBusy(false);
     }
   };
-  const clearChat = async () => {
-    setBusy(true);
+  const changeChat = async (action: "create" | "delete") => {
+    if (chatBusy || (action === "delete" && !chatId)) return;
+    setChatAction(action);
     setError("");
     try {
-      await coachRequest("DELETE", { action: "conversation" });
-      setMessages([]);
-      setPending(null);
-      setClearConfirm(false);
-      setStatus(
-        "Conversation cleared. Your saved notes and workouts are unchanged.",
-      );
+      if (action === "create") {
+        const { id } = await coachRequest("POST", { action: "new-chat" });
+        startNavigation(() => {
+          router.push(chatUrl(id, 1));
+          router.refresh();
+        });
+      } else {
+        await coachRequest("DELETE", { action: "conversation", id: chatId });
+        startNavigation(() => {
+          router.replace(chatUrl("new", 1));
+          router.refresh();
+        });
+      }
     } catch (failure) {
       setError(
         failure instanceof Error
           ? failure.message
-          : "Your conversation could not be cleared.",
+          : "Your chat could not be updated.",
       );
     } finally {
-      setBusy(false);
+      setChatAction(null);
     }
   };
 
@@ -198,6 +224,119 @@ export default function CoachChat({
           <Link href="/program">Edit Your Plan →</Link>
         </div>
       </header>
+      <section className="surface mb-6 space-y-3" aria-label="Your chats">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold">Your chats</h2>
+          <button
+            type="button"
+            className="primary-action"
+            disabled={chatBusy}
+            onClick={() => void changeChat("create")}
+          >
+            {chatAction === "create" ? "Starting…" : "New chat"}
+          </button>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="field min-w-48 flex-1">
+            Open a chat
+            <select
+              disabled={chatBusy || !chats.length}
+              value={chats.some((chat) => chat.id === chatId) ? chatId! : ""}
+              onChange={(event) => {
+                const id = event.target.value;
+                startNavigation(() => router.push(chatUrl(id)));
+              }}
+            >
+              <option value="" disabled>
+                {chats.length ? "Choose a saved chat" : "No saved chats yet"}
+              </option>
+              {chats.map((chat) => (
+                <option key={chat.id} value={chat.id}>
+                  {chat.title || "Untitled chat"} ·{" "}
+                  {new Date(chat.created_at).toLocaleDateString("en-IN", {
+                    day: "numeric",
+                    month: "short",
+                    timeZone: "Asia/Kolkata",
+                  })}
+                </option>
+              ))}
+            </select>
+          </label>
+          {chatId && (
+            <button
+              type="button"
+              className="danger-action"
+              disabled={chatBusy}
+              onClick={() => setClearConfirm(true)}
+            >
+              Delete this chat
+            </button>
+          )}
+        </div>
+        {(page > 1 || hasOlderChats) && (
+          <div className="flex flex-wrap gap-2">
+            {page > 1 && (
+              <button
+                className="secondary-action"
+                disabled={chatBusy}
+                onClick={() =>
+                  startNavigation(() =>
+                    router.push(chatUrl(chatId ?? "new", page - 1)),
+                  )
+                }
+              >
+                Newer chats
+              </button>
+            )}
+            {hasOlderChats && (
+              <button
+                className="secondary-action"
+                disabled={chatBusy}
+                onClick={() =>
+                  startNavigation(() =>
+                    router.push(chatUrl(chatId ?? "new", page + 1)),
+                  )
+                }
+              >
+                Older chats
+              </button>
+            )}
+          </div>
+        )}
+        {clearConfirm && (
+          <div
+            className="status-message"
+            role="group"
+            aria-label="Confirm chat deletion"
+          >
+            <p>
+              Permanently delete this chat and its messages? Saved goals and
+              notes are kept separately.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                className="danger-action"
+                disabled={chatBusy}
+                onClick={() => void changeChat("delete")}
+              >
+                {chatAction === "delete" ? "Deleting…" : "Delete chat"}
+              </button>
+              <button
+                className="secondary-action"
+                disabled={chatBusy}
+                onClick={() => setClearConfirm(false)}
+              >
+                Keep chat
+              </button>
+            </div>
+          </div>
+        )}
+        {!pending && error && (
+          <p className="status-message" data-tone="error" role="alert">
+            {error}
+          </p>
+        )}
+      </section>
       {!configured && (
         <p className="status-message" role="status">
           Your coach is waiting to be connected. An administrator needs to
@@ -326,25 +465,28 @@ export default function CoachChat({
           <div className="empty-state">
             <h2>What Would You Like to Work On?</h2>
             <p>
-              Ask about a movement, a tough session, or what your recent logs
-              show. Your coach will tell you when it needs more information.
+              {chatId
+                ? "Ask about a movement, a tough session, or what your recent logs show."
+                : "Start a new chat or open one from your saved chats."}
             </p>
-            <div className="flex flex-wrap gap-2 mt-4">
-              {starters.map((starter) => (
-                <button
-                  type="button"
-                  key={starter}
-                  className="secondary-action text-sm"
-                  disabled={!configured || busy}
-                  onClick={() => {
-                    setText(starter);
-                    composer.current?.focus();
-                  }}
-                >
-                  {starter}
-                </button>
-              ))}
-            </div>
+            {chatId && (
+              <div className="flex flex-wrap gap-2 mt-4">
+                {starters.map((starter) => (
+                  <button
+                    type="button"
+                    key={starter}
+                    className="secondary-action text-sm"
+                    disabled={!configured || chatBusy || !chatId}
+                    onClick={() => {
+                      setText(starter);
+                      composer.current?.focus();
+                    }}
+                  >
+                    {starter}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {pending && (
@@ -360,7 +502,7 @@ export default function CoachChat({
             Reading your training records and preparing a reply…
           </p>
         )}
-        {error && (
+        {error && pending && (
           <div className="status-message" data-tone="error" role="alert">
             <p>{error}</p>
             {pending && (
@@ -408,7 +550,7 @@ export default function CoachChat({
           maxLength={2000}
           rows={2}
           placeholder="Ask about your training…"
-          disabled={!configured || busy || Boolean(pending)}
+          disabled={!configured || chatBusy || !chatId || Boolean(pending)}
           className="w-full"
           onKeyDown={(event) => {
             if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
@@ -423,48 +565,18 @@ export default function CoachChat({
           </span>
           <button
             className="primary-action"
-            disabled={busy || !configured || !text.trim() || Boolean(pending)}
+            disabled={
+              chatBusy ||
+              !chatId ||
+              !configured ||
+              !text.trim() ||
+              Boolean(pending)
+            }
           >
             {busy ? "Thinking…" : "Send"}
           </button>
         </div>
       </form>
-      {messages.length > 0 && (
-        <div className="mt-6">
-          {clearConfirm ? (
-            <div className="status-message">
-              <p>
-                Delete your conversation history? Your saved notes and workouts
-                will stay.
-              </p>
-              <div className="flex gap-3 mt-3">
-                <button
-                  className="secondary-action text-[var(--danger)]"
-                  disabled={busy}
-                  onClick={() => void clearChat()}
-                >
-                  Delete Conversation
-                </button>
-                <button
-                  className="secondary-action"
-                  disabled={busy}
-                  onClick={() => setClearConfirm(false)}
-                >
-                  Keep It
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button
-              className="muted text-sm underline"
-              disabled={busy}
-              onClick={() => setClearConfirm(true)}
-            >
-              Clear Conversation
-            </button>
-          )}
-        </div>
-      )}
     </main>
   );
 }

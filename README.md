@@ -13,6 +13,7 @@ Apply any missing migrations below before deploying this version.
    - `supabase/migrations/0012_progress_and_profile.sql`
    - `supabase/migrations/0013_bulk_muscle_mapping.sql`
    - `supabase/migrations/0014_copy_member_plan.sql`
+   - `supabase/migrations/0015_separate_coach_chats.sql`
 2. Each file must finish successfully before continuing. These updates retain accounts, workout rows, catalog references, photos and chat history. Catalog removal archives items instead of deleting historical references.
 3. In Supabase **Authentication → URL Configuration**, set the Site URL to your production origin, and allow these exact redirect URLs:
    - `https://personalised-overload-tracker.vercel.app/set-password`
@@ -46,7 +47,7 @@ Invited members open the email, choose a password, and sign in. Existing members
 
 ## Fresh installation
 
-Run all migration files 0001–0014 in numeric order on an empty Supabase project. Create your first account in Supabase Auth and promote it once from SQL Editor:
+Run all migration files in numeric order on an empty Supabase project. Create your first account in Supabase Auth and promote it once from SQL Editor:
 
 ```sql
 update public.profiles set role = 'admin' where id = '<AUTH_USER_UUID>';

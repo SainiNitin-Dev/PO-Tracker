@@ -462,6 +462,60 @@ try {
     "select count(*)::int from coach_messages",
     2,
   );
+  const oldChat = await scalar(
+    "select conversation_id from coach_messages where request_id=$1 limit 1",
+    [exchange],
+  );
+  const newChat = await scalar(
+    "insert into coach_conversations(user_id) values(auth.uid()) returning id",
+  );
+  const newExchange = randomUUID();
+  const saveChat =
+    "select save_coach_chat_exchange($1,$2,'Review my plan','Grounded reply','[]')";
+  await db.query(saveChat, [newChat, newExchange]);
+  await db.query(saveChat, [newChat, newExchange]);
+  await equal(
+    "new coach chat is titled after its first question",
+    "select title from coach_conversations where id=$1",
+    "Review my plan",
+    [newChat],
+  );
+  await equal(
+    "coach retries save exactly one exchange in the chosen chat",
+    "select count(*)::int from coach_messages where conversation_id=$1",
+    2,
+    [newChat],
+  );
+  await equal(
+    "the original chat keeps its own messages",
+    "select count(*)::int from coach_messages where conversation_id=$1",
+    2,
+    [oldChat],
+  );
+  await login(b);
+  await denied(
+    "members cannot send messages to someone else's chat",
+    saveChat,
+    [newChat, randomUUID()],
+  );
+  await db.query("delete from coach_conversations where id=$1", [newChat]);
+  await login(a);
+  await equal(
+    "another member cannot delete a chat",
+    "select count(*)::int from coach_conversations where id=$1",
+    1,
+    [newChat],
+  );
+  await db.query("delete from coach_conversations where id=$1", [newChat]);
+  await equal(
+    "deleting a chat deletes only its messages",
+    "select count(*)::int from coach_messages",
+    2,
+  );
+  await denied("late replies cannot recreate a deleted chat", saveChat, [
+    newChat,
+    randomUUID(),
+  ]);
   await equal(
     "AI allowance reserves one request",
     "select allowed from reserve_ai_request('chat')",

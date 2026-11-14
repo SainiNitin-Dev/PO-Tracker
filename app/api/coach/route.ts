@@ -15,6 +15,15 @@ export async function POST(request: Request) {
   try {
     const { supabase, user } = await requireApiUser();
     const body = await readJson(request);
+    if (body.action === "new-chat") {
+      const { data, error } = await supabase
+        .from("coach_conversations")
+        .insert({ user_id: user.id })
+        .select("id")
+        .single();
+      if (error) throw error;
+      return NextResponse.json({ id: data.id }, { status: 201 });
+    }
     if (body.action === "note") {
       const note = textValue(body.note, "Note", { max: 1000 });
       const { data, error } = await supabase.rpc("save_coach_note", {
@@ -33,11 +42,22 @@ export async function POST(request: Request) {
       throw new HttpError(400, "Choose a valid coach action.");
     const message = textValue(body.message, "Message", { max: 2000 });
     const requestId = uuid(body.requestId, "message");
+    const chatId = uuid(body.chatId, "chat");
+    const { data: conversation, error: conversationError } = await supabase
+      .from("coach_conversations")
+      .select("id")
+      .eq("id", chatId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (conversationError) throw conversationError;
+    if (!conversation)
+      throw new HttpError(404, "This chat is no longer available.");
     const { data: existing, error: existingError } = await supabase
       .from("coach_messages")
       .select("content,evidence")
       .eq("user_id", user.id)
       .eq("request_id", requestId)
+      .eq("conversation_id", chatId)
       .eq("role", "assistant")
       .maybeSingle();
     if (existingError) throw existingError;
@@ -47,24 +67,14 @@ export async function POST(request: Request) {
         evidence: existing.evidence,
       });
     providerConfig("CHAT");
-    const { data: conversation, error: conversationError } = await supabase
-      .from("coach_conversations")
-      .select("id")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (conversationError) throw conversationError;
     const [history, snapshot] = await Promise.all([
-      conversation
-        ? supabase
-            .from("coach_messages")
-            .select("role,content")
-            .eq("conversation_id", conversation.id)
-            .eq("user_id", user.id)
-            .order("created_at", { ascending: false })
-            .limit(10)
-        : Promise.resolve({ data: [], error: null }),
+      supabase
+        .from("coach_messages")
+        .select("role,content")
+        .eq("conversation_id", chatId)
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(10),
       trainingSnapshot(supabase, user.id, message),
     ]);
     if (history.error) throw history.error;
@@ -91,8 +101,9 @@ export async function POST(request: Request) {
       snapshot,
     );
     const { data: saved, error: saveError } = await supabase.rpc(
-      "save_coach_exchange",
+      "save_coach_chat_exchange",
       {
+        chat_id: chatId,
         exchange_id: requestId,
         user_message: message,
         coach_answer: reply.answer,
@@ -125,7 +136,8 @@ export async function DELETE(request: Request) {
       const { error } = await supabase
         .from("coach_conversations")
         .delete()
-        .eq("user_id", user.id);
+        .eq("user_id", user.id)
+        .eq("id", uuid(body.id, "chat"));
       if (error) throw error;
     } else throw new HttpError(400, "Choose what to remove.");
     return NextResponse.json({ ok: true });
