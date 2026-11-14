@@ -33,16 +33,23 @@ export async function loadActiveWorkout(
     .maybeSingle();
   if (error) throw error;
   if (!session) return null;
-  const { data: recent, error: historyError } = await supabase
-    .from("workout_sessions")
-    .select(
-      "id,performed_at,notes,day:program_days(name),workout_exercises(gym_exercise_id,notes,workout_sets(id,set_number,set_kind,weight_kg,reps,duration_seconds,rir))",
-    )
-    .eq("user_id", userId)
-    .eq("status", "completed")
-    .lt("performed_at", session.performed_at)
-    .order("performed_at", { ascending: false })
-    .limit(60);
+  const equipmentIds = [
+    ...new Set(session.workout_exercises.map((entry) => entry.gym_exercise_id)),
+  ];
+  const { data: recent, error: historyError } = equipmentIds.length
+    ? await supabase
+        .from("workout_sessions")
+        .select(
+          "id,performed_at,notes,day:program_days(name),workout_exercises(gym_exercise_id,notes,workout_sets(id,set_number,set_kind,weight_kg,reps,duration_seconds,rir))",
+        )
+        .eq("user_id", userId)
+        .eq("status", "completed")
+        .lt("performed_at", session.performed_at)
+        .in("workout_exercises.gym_exercise_id", equipmentIds)
+        .eq("workout_exercises.workout_sets.set_kind", "working")
+        .order("performed_at", { ascending: false })
+        .limit(60)
+    : { data: [], error: null };
   if (historyError) throw historyError;
   const gym = one(session.gym);
   return {

@@ -8,12 +8,16 @@ import {
   type ChatTurn,
 } from "@/lib/coach/provider";
 import { recordReply } from "@/lib/coach/record-reply";
+import {
+  coachNeedsRecords,
+  generalTrainingReply,
+} from "@/lib/coach/question-scope";
 
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
   try {
-    const { supabase, user } = await requireApiUser();
+    const { supabase, user, profile } = await requireApiUser();
     const body = await readJson(request);
     if (body.action === "new-chat") {
       if (body.id !== undefined) {
@@ -63,30 +67,21 @@ export async function POST(request: Request) {
     const message = textValue(body.message, "Message", { max: 2000 });
     const requestId = uuid(body.requestId, "message");
     const chatId = uuid(body.chatId, "chat");
-    const { data: conversation, error: conversationError } = await supabase
-      .from("coach_conversations")
-      .select("id")
-      .eq("id", chatId)
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (conversationError) throw conversationError;
-    if (!conversation)
-      throw new HttpError(404, "This chat is no longer available.");
-    const { data: existing, error: existingError } = await supabase
-      .from("coach_messages")
-      .select("content,evidence")
-      .eq("user_id", user.id)
-      .eq("request_id", requestId)
-      .eq("conversation_id", chatId)
-      .eq("role", "assistant")
-      .maybeSingle();
-    if (existingError) throw existingError;
-    if (existing)
-      return NextResponse.json({
-        answer: existing.content,
-        evidence: existing.evidence,
-      });
-    const [history, snapshot] = await Promise.all([
+    const [conversation, existing, history] = await Promise.all([
+      supabase
+        .from("coach_conversations")
+        .select("id")
+        .eq("id", chatId)
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("coach_messages")
+        .select("content,evidence")
+        .eq("user_id", user.id)
+        .eq("request_id", requestId)
+        .eq("conversation_id", chatId)
+        .eq("role", "assistant")
+        .maybeSingle(),
       supabase
         .from("coach_messages")
         .select("role,content")
@@ -94,14 +89,17 @@ export async function POST(request: Request) {
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(10),
-      trainingSnapshot(supabase, user.id, message),
     ]);
+    if (conversation.error) throw conversation.error;
+    if (!conversation.data)
+      throw new HttpError(404, "This chat is no longer available.");
+    if (existing.error) throw existing.error;
+    if (existing.data)
+      return NextResponse.json({
+        answer: existing.data.content,
+        evidence: existing.data.evidence,
+      });
     if (history.error) throw history.error;
-    const { data: allowance, error: allowanceError } = await supabase.rpc(
-      "reserve_ai_request",
-      { request_kind: "chat" },
-    );
-    if (allowanceError) throw allowanceError;
     const turns: ChatTurn[] = (history.data ?? [])
       .reverse()
       .filter((turn) => turn.role === "user" || turn.role === "assistant")
@@ -109,12 +107,37 @@ export async function POST(request: Request) {
         role: turn.role as ChatTurn["role"],
         content: turn.content,
       }));
-    const reply = allowance?.[0]?.allowed
-      ? await completeCoachMessage(
-          [...turns, { role: "user", content: message }],
-          snapshot,
-        )
-      : recordReply(message, snapshot);
+    const previousQuestion = turns
+      .filter((turn) => turn.role === "user")
+      .at(-1)?.content;
+    const needsRecords = coachNeedsRecords(message, previousQuestion);
+    const snapshotPromise = needsRecords
+      ? trainingSnapshot(
+          supabase,
+          user.id,
+          message,
+          profile.display_name,
+        ).catch(() => null)
+      : Promise.resolve(null);
+    const [snapshot, allowance] = await Promise.all([
+      snapshotPromise,
+      supabase.rpc("reserve_ai_request", { request_kind: "chat" }),
+    ]);
+    const reply =
+      needsRecords && !snapshot
+        ? {
+            answer:
+              "I couldn’t load your saved training records right now. If you tell me the lift, weights and reps, or paste your split, I can still help you work through it.",
+            evidence: [],
+          }
+        : allowance.data?.[0]?.allowed && !allowance.error
+          ? await completeCoachMessage(
+              [...turns, { role: "user", content: message }],
+              snapshot,
+            )
+          : snapshot
+            ? recordReply(message, snapshot)
+            : { answer: generalTrainingReply(message), evidence: [] };
     const { data: saved, error: saveError } = await supabase.rpc(
       "save_coach_chat_exchange",
       {

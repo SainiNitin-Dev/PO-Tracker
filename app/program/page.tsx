@@ -6,7 +6,9 @@ export default async function ProgramPage() {
   const [programsResult, exerciseResult] = await Promise.all([
     supabase
       .from("programs")
-      .select("id,name,is_active")
+      .select(
+        "id,name,is_active,program_days(id,program_id,name,weekday,sort_order,program_exercises(id,program_day_id,exercise_id,target_sets,rep_min,rep_max,time_target_seconds,sort_order,exercise:exercises(name,tracking_type,archived_at)))",
+      )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false }),
     supabase
@@ -17,32 +19,25 @@ export default async function ProgramPage() {
   ]);
   if (programsResult.error || exerciseResult.error)
     throw new Error("We could not load your plans. Please try again.");
-  const programIds = (programsResult.data ?? []).map((program) => program.id);
-  const { data: days, error: dayError } = programIds.length
-    ? await supabase
-        .from("program_days")
-        .select("id,program_id,name,weekday,sort_order")
-        .in("program_id", programIds)
-        .order("sort_order")
-    : { data: [], error: null };
-  if (dayError) throw dayError;
-  const dayIds = (days ?? []).map((day) => day.id);
-  const { data: entries, error: entryError } = dayIds.length
-    ? await supabase
-        .from("program_exercises")
-        .select(
-          "id,program_day_id,exercise_id,target_sets,rep_min,rep_max,time_target_seconds,sort_order,exercise:exercises(name,tracking_type,archived_at)",
-        )
-        .in("program_day_id", dayIds)
-        .order("sort_order")
-    : { data: [], error: null };
-  if (entryError) throw entryError;
+  const programs = programsResult.data ?? [];
+  const days = programs.flatMap((program) => program.program_days);
+  const entries = days.flatMap((day) => day.program_exercises);
   return (
     <ProgramEditor
-      programs={programsResult.data ?? []}
-      days={days ?? []}
+      programs={programs.map(({ id, name, is_active }) => ({
+        id,
+        name,
+        is_active,
+      }))}
+      days={days.map(({ id, program_id, name, weekday, sort_order }) => ({
+        id,
+        program_id,
+        name,
+        weekday,
+        sort_order,
+      }))}
       exercises={exerciseResult.data ?? []}
-      entries={(entries ?? []).map((entry) => ({
+      entries={entries.map((entry) => ({
         ...entry,
         exercise: Array.isArray(entry.exercise)
           ? (entry.exercise[0] ?? null)

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { completeCoachMessage, validateCoachReply } from "./provider";
+import { coachNeedsRecords } from "./question-scope";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -93,5 +94,63 @@ describe("coach grounding", () => {
       },
     );
     expect(reply.answer).toContain("Tell me which days you train");
+  });
+});
+
+describe("general training questions", () => {
+  it.each([
+    "Hi Coach",
+    "What does RIR mean?",
+    "What’s a good rep range for bench press?",
+    "What do you think of a push pull legs split?",
+    "How long should I rest between sets?",
+  ])("does not request personal records for %s", (question) => {
+    expect(coachNeedsRecords(question)).toBe(false);
+  });
+  it.each([
+    "What do you think of my split?",
+    "Review my workout plan",
+    "What did I bench last time?",
+    "Should I increase the weight today?",
+  ])("uses personal records for %s", (question) => {
+    expect(coachNeedsRecords(question)).toBe(true);
+  });
+  it("keeps record context for a relevant follow-up", () => {
+    expect(
+      coachNeedsRecords("What about deadlifts?", "What did I lift last week?"),
+    ).toBe(true);
+    expect(
+      coachNeedsRecords("What does RIR mean?", "What did I lift last week?"),
+    ).toBe(false);
+  });
+  it("allows an example with reps and weight without attaching personal records", async () => {
+    vi.stubEnv("CHAT_API_BASE_URL", "https://provider.test/v1");
+    vi.stubEnv("CHAT_API_KEY", "test");
+    vi.stubEnv("CHAT_MODEL", "test");
+    const answer =
+      "For example, try 3 sets of 8–12 reps at a weight you can control.";
+    const fetch = vi.fn(async (_url: string, options: RequestInit) => {
+      expect(options.body).not.toContain("DATABASE_RECORDS");
+      return Response.json({
+        choices: [{ message: { content: JSON.stringify({ answer }) } }],
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+    expect(
+      await completeCoachMessage(
+        [{ role: "user", content: "What is a good rep range?" }],
+        null,
+      ),
+    ).toEqual({ answer, evidence: [] });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it("gives general help instead of asking for saved workouts when the provider is down", async () => {
+    vi.stubEnv("CHAT_API_KEY", "");
+    const reply = await completeCoachMessage(
+      [{ role: "user", content: "What does RIR mean?" }],
+      null,
+    );
+    expect(reply.answer).toContain("2 reps in reserve");
+    expect(reply.evidence).toEqual([]);
   });
 });

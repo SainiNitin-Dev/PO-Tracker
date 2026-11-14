@@ -8,7 +8,9 @@ export default async function WorkoutPage() {
     await Promise.all([
       supabase
         .from("programs")
-        .select("id")
+        .select(
+          "program_days(id,name,weekday,sort_order,program_exercises(id,program_day_id,exercise_id,sort_order,exercise:exercises(name,archived_at)))",
+        )
         .eq("user_id", user.id)
         .eq("is_active", true)
         .maybeSingle(),
@@ -28,31 +30,21 @@ export default async function WorkoutPage() {
       throw new Error(
         "We could not load your training setup. Please try again.",
       );
-  const { data: days, error: daysError } = programResult.data
-    ? await supabase
-        .from("program_days")
-        .select("id,name,weekday,sort_order")
-        .eq("program_id", programResult.data.id)
-        .order("sort_order")
-    : { data: [], error: null };
-  if (daysError) throw daysError;
-  const ids = (days ?? []).map((day) => day.id);
-  const { data: entries, error: entriesError } = ids.length
-    ? await supabase
-        .from("program_exercises")
-        .select(
-          "id,program_day_id,exercise_id,exercise:exercises(name,archived_at)",
-        )
-        .in("program_day_id", ids)
-        .order("sort_order")
-    : { data: [], error: null };
-  if (entriesError) throw entriesError;
+  const days = [...(programResult.data?.program_days ?? [])].sort(
+    (a, b) => a.sort_order - b.sort_order,
+  );
+  const entries = days
+    .flatMap((day) => day.program_exercises)
+    .sort((a, b) => a.sort_order - b.sort_order);
+  const plannedExercises = new Set(entries.map((entry) => entry.exercise_id));
   const options = {
     userId: user.id,
     gyms: gymResult.data ?? [],
-    days: days ?? [],
-    availability: availabilityResult.data ?? [],
-    entries: (entries ?? []).map((entry) => {
+    days: days.map(({ id, name, weekday }) => ({ id, name, weekday })),
+    availability: (availabilityResult.data ?? []).filter((entry) =>
+      plannedExercises.has(entry.exercise_id),
+    ),
+    entries: entries.map((entry) => {
       const exercise = Array.isArray(entry.exercise)
         ? entry.exercise[0]
         : entry.exercise;

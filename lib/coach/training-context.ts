@@ -10,10 +10,10 @@ export async function trainingSnapshot(
   supabase: SupabaseClient,
   userId: string,
   question = "",
+  name = "",
 ): Promise<TrainingSnapshot> {
   const since = new Date(Date.now() - 84 * 86400000).toISOString();
   const results = await Promise.all([
-    supabase.from("profiles").select("display_name").eq("id", userId).single(),
     supabase
       .from("workout_sessions")
       .select(
@@ -61,10 +61,9 @@ export async function trainingSnapshot(
       throw new Error(
         "Your training records could not be loaded. Please try again.",
       );
-  const [profile, sessions, notes, targets, metrics, program, experiments] =
-    results;
+  const [sessions, notes, targets, metrics, program, experiments] = results;
   return buildTrainingFacts({
-    name: profile.data?.display_name ?? "",
+    name,
     sessions: (sessions.data ?? []) as unknown as SessionRecord[],
     notes: (notes.data ?? []) as {
       id: string;
