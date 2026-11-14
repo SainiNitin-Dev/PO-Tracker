@@ -538,6 +538,52 @@ try {
     "select count(*)::int from progress_photos",
     0,
   );
+  await db.query(
+    "insert into exercise_soreness_feedback(workout_exercise_id,soreness_rating) values($1,2)",
+    [we],
+  );
+  await login(b);
+  await db.query("delete from workout_exercises where id=$1", [we]);
+  await db.query("delete from workout_sessions where id=$1", [workout]);
+  await login(a);
+  await equal(
+    "other members cannot remove a historical workout or its exercises",
+    "select count(*)::int from workout_exercises where session_id=$1",
+    2,
+    [workout],
+  );
+  await db.query(
+    "delete from workout_exercises where id=$1 and session_id=$2",
+    [we, workout],
+  );
+  await equal(
+    "exercise deletion removes its sets and feedback",
+    "select ((select count(*) from workout_sets where workout_exercise_id=$1) + (select count(*) from exercise_soreness_feedback where workout_exercise_id=$1))::int",
+    0,
+    [we],
+  );
+  await equal(
+    "exercise deletion preserves the other exercise's sets",
+    "select count(*)::int from workout_sets where workout_exercise_id=$1",
+    1,
+    [tw],
+  );
+  await db.query(
+    "delete from workout_sessions where id=$1 and user_id=auth.uid() and status in ('completed','abandoned')",
+    [workout],
+  );
+  await equal(
+    "deleting the workout removes its remaining log",
+    "select ((select count(*) from workout_sessions where id=$1) + (select count(*) from workout_exercises where session_id=$1) + (select count(*) from workout_sets where workout_exercise_id=$2))::int",
+    0,
+    [workout, tw],
+  );
+  await equal(
+    "history deletion preserves the exercise catalog",
+    "select count(*)::int from exercises where id=$1",
+    1,
+    [movement],
+  );
   await db.exec("reset role; set role anon;");
   await equal(
     "anonymous cannot see workout history",

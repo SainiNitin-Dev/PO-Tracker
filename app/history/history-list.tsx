@@ -1,8 +1,18 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import ConfirmDialog, { type Confirmation } from "@/components/confirm-dialog";
 import { historyRecords, type HistorySession } from "@/lib/history";
 import { requestJson } from "@/lib/client-request";
+const workoutDate = (date: string) =>
+  new Date(date).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  });
+
 export default function HistoryList({
   sessions,
 }: {
@@ -11,6 +21,10 @@ export default function HistoryList({
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState("sessions");
   const [busy, setBusy] = useState("");
+  const [refreshing, refresh] = useTransition();
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const router = useRouter();
+  const locked = Boolean(busy) || refreshing;
   const [message, setMessage] = useState<{
     text: string;
     error?: boolean;
@@ -24,6 +38,7 @@ export default function HistoryList({
     matches(`${r.name} ${r.gym} ${r.equipmentLabel ?? ""}`),
   );
   const soreness = async (exerciseId: string, rating: string) => {
+    if (locked) return;
     setBusy(exerciseId);
     setMessage(null);
     try {
@@ -38,6 +53,49 @@ export default function HistoryList({
       setBusy("");
     }
   };
+
+  function confirmDelete(
+    session: HistorySession,
+    exercise?: HistorySession["exercises"][number],
+  ) {
+    setConfirmation({
+      title: exercise
+        ? `Delete ${exercise.name} from this workout?`
+        : `Delete workout from ${workoutDate(session.performed_at)}?`,
+      description: exercise
+        ? `Permanently deletes the sets, notes, and feedback for ${exercise.name} in this session. The other exercises and your training plan stay in place.`
+        : `Permanently deletes this ${session.day} session at ${session.gym}, including all its exercises, sets, notes, and feedback. Your training plan stays in place.`,
+      label: exercise ? "Delete exercise log" : "Delete workout",
+      onConfirm: async () => {
+        if (locked) return;
+        setBusy(`delete:${exercise?.id ?? session.id}`);
+        setMessage(null);
+        try {
+          await requestJson(
+            "/api/workout-history",
+            { sessionId: session.id, exerciseId: exercise?.id },
+            "DELETE",
+          );
+          setMessage({
+            text: exercise
+              ? `${exercise.name} removed from this workout.`
+              : "Workout deleted.",
+          });
+          refresh(() => router.refresh());
+        } catch (error) {
+          setMessage({
+            text:
+              error instanceof Error
+                ? error.message
+                : "Could not delete this record.",
+            error: true,
+          });
+        } finally {
+          setBusy("");
+        }
+      },
+    });
+  }
   return (
     <main className="app-page">
       <header className="page-header">
@@ -145,13 +203,7 @@ export default function HistoryList({
                   <span>
                     {s.day}
                     <span className="muted mt-1 block text-sm font-normal">
-                      {s.gym} ·{" "}
-                      {new Date(s.performed_at).toLocaleDateString("en-IN", {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric",
-                        timeZone: "Asia/Kolkata",
-                      })}
+                      {s.gym} · {workoutDate(s.performed_at)}
                     </span>
                   </span>
                   <span className="badge">
@@ -159,6 +211,16 @@ export default function HistoryList({
                   </span>
                 </span>
               </summary>
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  className="danger-action"
+                  disabled={locked}
+                  onClick={() => confirmDelete(s)}
+                >
+                  {busy === `delete:${s.id}` ? "Deleting…" : "Delete workout"}
+                </button>
+              </div>
               {s.notes && (
                 <p className="muted my-4 whitespace-pre-wrap text-sm">
                   {s.notes}
@@ -170,9 +232,25 @@ export default function HistoryList({
                 </p>
               )}
               <div className="mt-5 space-y-6">
+                {!s.exercises.length && (
+                  <p className="muted text-sm">No exercises in this session.</p>
+                )}
                 {s.exercises.map((e) => (
                   <section key={e.id}>
-                    <h3 className="font-semibold">{e.name}</h3>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="font-semibold">{e.name}</h3>
+                      <button
+                        type="button"
+                        className="danger-action"
+                        disabled={locked}
+                        onClick={() => confirmDelete(s, e)}
+                        aria-label={`Delete ${e.name} from this workout`}
+                      >
+                        {busy === `delete:${e.id}`
+                          ? "Deleting…"
+                          : "Delete exercise log"}
+                      </button>
+                    </div>
                     {e.equipmentLabel && (
                       <p className="muted mt-1 text-xs">{e.equipmentLabel}</p>
                     )}
@@ -259,10 +337,7 @@ export default function HistoryList({
                             <option value="5">5 · Very high</option>
                           </select>
                         </label>
-                        <button
-                          disabled={Boolean(busy)}
-                          className="secondary-action"
-                        >
+                        <button disabled={locked} className="secondary-action">
                           {busy === e.id ? "Saving…" : "Save feedback"}
                         </button>
                       </form>
@@ -290,6 +365,10 @@ export default function HistoryList({
           )}
         </div>
       )}
+      <ConfirmDialog
+        confirmation={confirmation}
+        onClose={() => setConfirmation(null)}
+      />
     </main>
   );
 }
