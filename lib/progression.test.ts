@@ -70,8 +70,21 @@ describe("progression engine", () => {
           repMax: 12,
           latestSets: sets,
         }).action,
-      ).toBe("add_rep");
+      ).toBe("hold");
     }
+  });
+  it("adds one rep to the first working set below the top of the range", () => {
+    const suggestion = getSuggestion({
+      trackingType: "reps",
+      incrementKg: 2.5,
+      repMin: 8,
+      repMax: 12,
+      latestSets: [working(12), working(9)],
+    });
+    expect(suggestion.action).toBe("add_rep");
+    expect(suggestion.message).toContain(
+      "working set 2, aim for 10 reps at 60 kg",
+    );
   });
   it("uses seconds for timed exercises", () => {
     expect(

@@ -244,6 +244,15 @@ export function buildTrainingFacts(input: {
       );
   const program = input.program as Program | null;
   if (program) {
+    const weekdays = [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+    ];
     for (const day of [...program.program_days]
       .sort((a, b) => a.sort_order - b.sort_order)
       .slice(0, 7)) {
@@ -251,7 +260,7 @@ export function buildTrainingFacts(input: {
         .sort((a, b) => a.sort_order - b.sort_order)
         .slice(0, 12);
       add(
-        `${program.name} / ${day.name}: ${entries.length ? entries.map((entry) => `${one(entry.exercises)?.name ?? "Exercise"}, ${entry.target_sets} sets${entry.time_target_seconds ? ` of ${entry.time_target_seconds} seconds` : entry.rep_min && entry.rep_max ? ` of ${entry.rep_min}–${entry.rep_max} reps` : ""}`).join("; ") : "rest day; no exercises"}.`,
+        `${program.name} / ${day.name}${day.weekday === null ? "" : ` (${weekdays[day.weekday]})`}: ${entries.length ? entries.map((entry) => `${one(entry.exercises)?.name ?? "Exercise"}, ${entry.target_sets} sets${entry.time_target_seconds ? ` of ${entry.time_target_seconds} seconds` : entry.rep_min && entry.rep_max ? ` of ${entry.rep_min}–${entry.rep_max} reps` : ""}`).join("; ") : "no exercises assigned"}.`,
         "Your active training plan",
       );
     }

@@ -85,7 +85,7 @@ export default function CoachChat({
   }, [messages, busy]);
 
   const send = async (retry = false) => {
-    if (chatBusy || !configured || !chatId || (pending && !retry)) return;
+    if (chatBusy || !chatId || (pending && !retry)) return;
     const draft =
       retry && pending
         ? pending
@@ -339,8 +339,8 @@ export default function CoachChat({
       </section>
       {!configured && (
         <p className="status-message" role="status">
-          Your coach is waiting to be connected. An administrator needs to
-          finish the AI settings. You can still save notes below.
+          The AI connection is unavailable. You can still ask for a summary of
+          your saved plan or workouts.
         </p>
       )}
       <details className="surface p-5 mb-6">
@@ -476,7 +476,7 @@ export default function CoachChat({
                     type="button"
                     key={starter}
                     className="secondary-action text-sm"
-                    disabled={!configured || chatBusy || !chatId}
+                    disabled={chatBusy || !chatId}
                     onClick={() => {
                       setText(starter);
                       composer.current?.focus();
@@ -550,7 +550,7 @@ export default function CoachChat({
           maxLength={2000}
           rows={2}
           placeholder="Ask about your training…"
-          disabled={!configured || chatBusy || !chatId || Boolean(pending)}
+          disabled={chatBusy || !chatId || Boolean(pending)}
           className="w-full"
           onKeyDown={(event) => {
             if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
@@ -565,13 +565,7 @@ export default function CoachChat({
           </span>
           <button
             className="primary-action"
-            disabled={
-              chatBusy ||
-              !chatId ||
-              !configured ||
-              !text.trim() ||
-              Boolean(pending)
-            }
+            disabled={chatBusy || !chatId || !text.trim() || Boolean(pending)}
           >
             {busy ? "Thinking…" : "Send"}
           </button>

@@ -120,6 +120,13 @@ export function getSuggestion(input: ProgressionInput): Suggestion {
     (set) =>
       (set.reps ?? 0) >= input.repMax! && set.rir !== null && set.rir > 0,
   );
+  const allTop = work.every((set) => (set.reps ?? 0) >= input.repMax!);
+  if (allTop && !allTopWithRir)
+    return {
+      action: "hold",
+      message:
+        "Repeat the same load and reps today. If you reach the top of the range on every working set with at least one rep left, record that before moving up.",
+    };
   if (input.trackingType === "bodyweight_reps")
     return allTopWithRir
       ? {
@@ -140,9 +147,16 @@ export function getSuggestion(input: ProgressionInput): Suggestion {
       action: "increase_weight",
       message: `Try ${Math.round(((work[0].weightKg ?? 0) + input.incrementKg) * 100) / 100} kg next time: one weight step (${input.incrementKg} kg). Build back up through your rep range.`,
     };
+  if (allTop)
+    return {
+      action: "hold",
+      message:
+        "Repeat your last working weights and reps. Your sets used different loads or no weight step is set, so there isn’t one clear weight increase to suggest.",
+    };
+  const nextSet = work.findIndex((set) => (set.reps ?? 0) < input.repMax!);
+  const target = work[nextSet];
   return {
     action: "add_rep",
-    message:
-      "Keep the same weight and aim for one more rep across your working sets. Record reps left so the next suggestion can account for effort.",
+    message: `Keep your working weights the same. On working set ${nextSet + 1}, aim for ${Number(target.reps) + 1} reps${target.weightKg === null ? "" : ` at ${target.weightKg} kg`} if your form feels steady. Aim to match the other sets.`,
   };
 }

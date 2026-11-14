@@ -36,10 +36,11 @@ export async function loadActiveWorkout(
   const { data: recent, error: historyError } = await supabase
     .from("workout_sessions")
     .select(
-      "id,performed_at,notes,workout_exercises(gym_exercise_id,notes,workout_sets(id,set_number,set_kind,weight_kg,reps,duration_seconds,rir))",
+      "id,performed_at,notes,day:program_days(name),workout_exercises(gym_exercise_id,notes,workout_sets(id,set_number,set_kind,weight_kg,reps,duration_seconds,rir))",
     )
     .eq("user_id", userId)
     .eq("status", "completed")
+    .lt("performed_at", session.performed_at)
     .order("performed_at", { ascending: false })
     .limit(60);
   if (historyError) throw historyError;
@@ -57,11 +58,25 @@ export async function loadActiveWorkout(
         const equipment = one(entry.equipment);
         const exercise = one(equipment?.exercise);
         const plan = one(entry.program);
-        const history = (recent ?? []).flatMap((session) =>
-          session.workout_exercises
-            .filter((item) => item.gym_exercise_id === entry.gym_exercise_id)
-            .map((item) => ({ ...item, sessionNotes: session.notes })),
-        );
+        const history = (recent ?? []).flatMap((session) => {
+          const matches = session.workout_exercises.filter(
+            (item) => item.gym_exercise_id === entry.gym_exercise_id,
+          );
+          const workout_sets = matches
+            .flatMap((item) => item.workout_sets)
+            .sort((a, b) => a.set_number - b.set_number) as WorkoutSet[];
+          if (!workout_sets.some((set) => set.set_kind === "working"))
+            return [];
+          return [
+            {
+              workout_sets,
+              sessionNotes: session.notes,
+              notes: matches.map((item) => item.notes).join(" "),
+              performedAt: session.performed_at,
+              dayName: one(session.day)?.name ?? null,
+            },
+          ];
+        });
         const sets = (history[0]?.workout_sets ?? []) as WorkoutSet[];
         const previousSets = (history[1]?.workout_sets ?? []) as WorkoutSet[];
         const trackingType = (exercise?.tracking_type ??
@@ -110,6 +125,13 @@ export async function loadActiveWorkout(
           sets: ([...entry.workout_sets] as WorkoutSet[]).sort(
             (a, b) => a.set_number - b.set_number,
           ),
+          lastPerformance: history[0]
+            ? {
+                performedAt: history[0].performedAt,
+                dayName: history[0].dayName,
+                sets: sets.filter((set) => set.set_kind === "working"),
+              }
+            : null,
           suggestion: getSuggestion({
             trackingType,
             incrementKg: Number(gym?.weight_increment_kg ?? 2.5),

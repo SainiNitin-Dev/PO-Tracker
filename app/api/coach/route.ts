@@ -5,9 +5,9 @@ import { trainingSnapshot } from "@/lib/coach/training-context";
 import {
   completeCoachMessage,
   CoachProviderError,
-  providerConfig,
   type ChatTurn,
 } from "@/lib/coach/provider";
+import { recordReply } from "@/lib/coach/record-reply";
 
 export const maxDuration = 60;
 
@@ -66,7 +66,6 @@ export async function POST(request: Request) {
         answer: existing.content,
         evidence: existing.evidence,
       });
-    providerConfig("CHAT");
     const [history, snapshot] = await Promise.all([
       supabase
         .from("coach_messages")
@@ -83,12 +82,6 @@ export async function POST(request: Request) {
       { request_kind: "chat" },
     );
     if (allowanceError) throw allowanceError;
-    if (!allowance?.[0]?.allowed)
-      throw new HttpError(
-        429,
-        allowance?.[0]?.reason ??
-          "The coach allowance has been reached. Please try again later.",
-      );
     const turns: ChatTurn[] = (history.data ?? [])
       .reverse()
       .filter((turn) => turn.role === "user" || turn.role === "assistant")
@@ -96,10 +89,12 @@ export async function POST(request: Request) {
         role: turn.role as ChatTurn["role"],
         content: turn.content,
       }));
-    const reply = await completeCoachMessage(
-      [...turns, { role: "user", content: message }],
-      snapshot,
-    );
+    const reply = allowance?.[0]?.allowed
+      ? await completeCoachMessage(
+          [...turns, { role: "user", content: message }],
+          snapshot,
+        )
+      : recordReply(message, snapshot);
     const { data: saved, error: saveError } = await supabase.rpc(
       "save_coach_chat_exchange",
       {

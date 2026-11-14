@@ -19,6 +19,11 @@ export type WorkoutExercise = {
   repMax: number | null;
   timeTargetSeconds: number | null;
   sets: WorkoutSet[];
+  lastPerformance: {
+    performedAt: string;
+    dayName: string | null;
+    sets: WorkoutSet[];
+  } | null;
   suggestion: Suggestion;
   pumpRating: number | null;
   notes: string | null;

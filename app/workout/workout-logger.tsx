@@ -725,7 +725,47 @@ function ExerciseCard({
               : `${exercise.repMin ?? "—"}–${exercise.repMax ?? "—"} reps`}
           </p>
         </header>
-        <p className="status-message text-sm">{exercise.suggestion.message}</p>
+        {exercise.lastPerformance && (
+          <div className="rounded-xl border border-[#ded9ce] p-4">
+            <h3 className="font-semibold">Last time on this equipment</h3>
+            <p className="muted mt-1 text-sm">
+              {new Date(
+                exercise.lastPerformance.performedAt,
+              ).toLocaleDateString("en-IN", {
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+                timeZone: "Asia/Kolkata",
+              })}
+              {exercise.lastPerformance.dayName
+                ? ` · ${exercise.lastPerformance.dayName}`
+                : ""}
+            </p>
+            <ol className="mt-2 divide-y divide-[#ded9ce] text-sm">
+              {exercise.lastPerformance.sets.map((set, index) => (
+                <li
+                  key={set.id}
+                  className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 py-2"
+                >
+                  <span className="muted">Working set {index + 1}</span>
+                  <span className="tabular-nums">
+                    <strong>
+                      {set.weight_kg !== null ? `${set.weight_kg} kg × ` : ""}
+                      {set.reps !== null
+                        ? `${set.reps} reps`
+                        : `${set.duration_seconds}s`}
+                    </strong>
+                    {set.rir !== null ? ` · ${set.rir} reps left` : ""}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+        <div className="status-message text-sm">
+          <h3 className="font-semibold">What to try today</h3>
+          <p className="mt-1">{exercise.suggestion.message}</p>
+        </div>
         {exercise.sets.length > 0 && (
           <div className="space-y-2">
             <p className="text-sm font-semibold">Saved sets</p>
