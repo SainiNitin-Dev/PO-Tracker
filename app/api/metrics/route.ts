@@ -14,16 +14,14 @@ export async function POST(request: Request) {
       Date.parse(body.date) < Date.UTC(2000, 0, 1)
     )
       throw new HttpError(400, "Choose a valid measurement date.");
-    const { error } = await supabase
-      .from("body_metrics")
-      .insert({
-        user_id: user.id,
-        recorded_at: body.date,
-        bodyweight_kg: numberValue(body.weight, "Body weight", {
-          min: 20,
-          max: 500,
-        }),
-      });
+    const { error } = await supabase.from("body_metrics").insert({
+      user_id: user.id,
+      recorded_at: body.date,
+      bodyweight_kg: numberValue(body.weight, "Body weight", {
+        min: 20,
+        max: 500,
+      }),
+    });
     if (error) throw error;
     return NextResponse.json({ ok: true });
   } catch (error) {

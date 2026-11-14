@@ -37,8 +37,20 @@ export async function POST(request: Request) {
     // Keep the inputs with the review so edited dates/poses/notes never reuse
     // an answer generated for different context. Signed URLs are not stored.
     const sourceContext = {
-      older: { id: older.id, storagePath: older.storage_path, date: older.taken_at, pose: older.pose, notes: older.conditions ?? null },
-      newer: { id: newer.id, storagePath: newer.storage_path, date: newer.taken_at, pose: newer.pose, notes: newer.conditions ?? null },
+      older: {
+        id: older.id,
+        storagePath: older.storage_path,
+        date: older.taken_at,
+        pose: older.pose,
+        notes: older.conditions ?? null,
+      },
+      newer: {
+        id: newer.id,
+        storagePath: newer.storage_path,
+        date: newer.taken_at,
+        pose: newer.pose,
+        notes: newer.conditions ?? null,
+      },
     };
     const { data: previous, error: previousError } = await supabase
       .from("photo_reviews")

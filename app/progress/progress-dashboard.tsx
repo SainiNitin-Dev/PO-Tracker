@@ -342,7 +342,9 @@ export default function ProgressDashboard({
               )}
               {e.incomplete ? (
                 <p className="status-message mt-4">
-                  {e.status !== "active" && !e.ended_at ? "This older experiment has no recorded end date. Its results cannot be compared reliably." : "This experiment extends outside the loaded history window. Comparisons are incomplete; review its sessions in workout history."}
+                  {e.status !== "active" && !e.ended_at
+                    ? "This older experiment has no recorded end date. Its results cannot be compared reliably."
+                    : "This experiment extends outside the loaded history window. Comparisons are incomplete; review its sessions in workout history."}
                 </p>
               ) : (
                 <>

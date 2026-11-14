@@ -34,16 +34,14 @@ export async function POST(request: Request) {
         .single();
       if (exerciseError || !data)
         throw new HttpError(400, "Choose an active exercise.");
-      const { error } = await supabase
-        .from("exercise_muscles")
-        .upsert(
-          {
-            exercise_id: exerciseId,
-            muscle_id: uuid(body.muscleId, "muscle"),
-            contribution,
-          },
-          { onConflict: "exercise_id,muscle_id" },
-        );
+      const { error } = await supabase.from("exercise_muscles").upsert(
+        {
+          exercise_id: exerciseId,
+          muscle_id: uuid(body.muscleId, "muscle"),
+          contribution,
+        },
+        { onConflict: "exercise_id,muscle_id" },
+      );
       if (error) throw error;
     } else throw new HttpError(400, "Choose a valid action.");
     return NextResponse.json({ ok: true });

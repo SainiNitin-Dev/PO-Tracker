@@ -80,7 +80,8 @@ export default function LoginPage() {
       <form onSubmit={submit} className="surface stack" aria-busy={loading}>
         {!supabase && (
           <p role="alert" className="status-message" data-tone="error">
-            Sign-in is not available yet. Ask your administrator to finish setting up the app.
+            Sign-in is not available yet. Ask your administrator to finish
+            setting up the app.
           </p>
         )}
         <label className="field">

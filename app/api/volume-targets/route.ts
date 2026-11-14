@@ -17,17 +17,15 @@ export async function POST(request: Request) {
     });
     if (max < min)
       throw new HttpError(400, "Maximum sets must be at least the minimum.");
-    const { error } = await supabase
-      .from("volume_targets")
-      .upsert(
-        {
-          user_id: user.id,
-          muscle_id: uuid(body.muscleId, "Muscle"),
-          weekly_min: min,
-          weekly_max: max,
-        },
-        { onConflict: "user_id,muscle_id" },
-      );
+    const { error } = await supabase.from("volume_targets").upsert(
+      {
+        user_id: user.id,
+        muscle_id: uuid(body.muscleId, "Muscle"),
+        weekly_min: min,
+        weekly_max: max,
+      },
+      { onConflict: "user_id,muscle_id" },
+    );
     if (error) throw error;
     return NextResponse.json({ ok: true });
   } catch (error) {

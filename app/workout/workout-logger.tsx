@@ -12,7 +12,10 @@ import { validateSet } from "@/lib/training-validation";
 import { requestJson } from "@/lib/client-request";
 
 async function save(body: object) {
-  return requestJson<{ workout: ActiveWorkout | null; set: WorkoutSet }>("/api/workouts", body);
+  return requestJson<{ workout: ActiveWorkout | null; set: WorkoutSet }>(
+    "/api/workouts",
+    body,
+  );
 }
 
 export default function WorkoutLogger({
@@ -28,7 +31,13 @@ export default function WorkoutLogger({
   const [busy, setBusy] = useState(false);
   const [setBusyCount, setSetBusyCount] = useState(0);
   const [unsaved, setUnsaved] = useState<Record<string, boolean>>({});
-  const onDirty = useCallback((id: string, dirty: boolean) => setUnsaved(current => current[id] === dirty ? current : { ...current, [id]: dirty }), []);
+  const onDirty = useCallback(
+    (id: string, dirty: boolean) =>
+      setUnsaved((current) =>
+        current[id] === dirty ? current : { ...current, [id]: dirty },
+      ),
+    [],
+  );
   const hasUnsaved = Object.values(unsaved).some(Boolean);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -195,11 +204,17 @@ export default function WorkoutLogger({
       setRestUntil(null);
       // Older versions could leave several unfinished sessions. Offer the next one without losing it.
       try {
-        const result = await requestJson<{workout: ActiveWorkout | null}>("/api/workouts", undefined, "GET");
+        const result = await requestJson<{ workout: ActiveWorkout | null }>(
+          "/api/workouts",
+          undefined,
+          "GET",
+        );
         setWorkout(result.workout);
         setNotes(result.workout?.notes ?? "");
         setBodyweight(result.workout?.bodyweight_kg?.toString() ?? "");
-      } catch { /* The finished workout is saved. Any older open session loads on the next visit. */ }
+      } catch {
+        /* The finished workout is saved. Any older open session loads on the next visit. */
+      }
     } catch (reason) {
       setError(
         reason instanceof Error
@@ -451,7 +466,13 @@ export default function WorkoutLogger({
                 onChange={(event) => rememberNotes(notes, event.target.value)}
               />
             </label>
-            {hasUnsaved && <p className="status-message" role="status">You have unsaved set or exercise-note changes. Save them, or discard those changes below the exercise, before ending this workout.</p>}
+            {hasUnsaved && (
+              <p className="status-message" role="status">
+                You have unsaved set or exercise-note changes. Save them, or
+                discard those changes below the exercise, before ending this
+                workout.
+              </p>
+            )}
             {endAction ? (
               <div
                 className="space-y-3"
@@ -488,7 +509,9 @@ export default function WorkoutLogger({
               <div className="flex flex-col gap-2">
                 <button
                   className="primary-action"
-                  disabled={busy || setBusyCount > 0 || hasUnsaved || workingCount === 0}
+                  disabled={
+                    busy || setBusyCount > 0 || hasUnsaved || workingCount === 0
+                  }
                   onClick={() => setEndAction("complete")}
                 >
                   Finish Workout
@@ -552,18 +575,41 @@ function ExerciseCard({
   const [notes, setNotes] = useState(exercise.notes ?? "");
   const [dirty, setDirty] = useState(false);
   const [feedbackDirty, setFeedbackDirty] = useState(false);
-  const [savedFeedback, setSavedFeedback] = useState({pump: exercise.pumpRating?.toString() ?? "", notes: exercise.notes ?? ""});
+  const [savedFeedback, setSavedFeedback] = useState({
+    pump: exercise.pumpRating?.toString() ?? "",
+    notes: exercise.notes ?? "",
+  });
   const feedbackKey = `${draftKey}:feedback`;
-  useEffect(() => { onDirty(exercise.id, dirty || feedbackDirty); }, [exercise.id, dirty, feedbackDirty, onDirty]);
+  useEffect(() => {
+    onDirty(exercise.id, dirty || feedbackDirty);
+  }, [exercise.id, dirty, feedbackDirty, onDirty]);
   useEffect(() => {
     try {
       const stored = localStorage.getItem(feedbackKey);
-      if (stored) { const value = JSON.parse(stored); if (typeof value.notes === "string" && typeof value.pump === "string") { setPump(value.pump); setNotes(value.notes); setFeedbackDirty(true); } }
-    } catch { /* Keep server feedback when local storage is unavailable. */ }
+      if (stored) {
+        const value = JSON.parse(stored);
+        if (typeof value.notes === "string" && typeof value.pump === "string") {
+          setPump(value.pump);
+          setNotes(value.notes);
+          setFeedbackDirty(true);
+        }
+      }
+    } catch {
+      /* Keep server feedback when local storage is unavailable. */
+    }
   }, [feedbackKey]);
   function changeFeedback(nextPump: string, nextNotes: string) {
-    setPump(nextPump); setNotes(nextNotes); setFeedbackDirty(true);
-    try { localStorage.setItem(feedbackKey, JSON.stringify({pump: nextPump, notes: nextNotes})); } catch { /* Keep values in memory. */ }
+    setPump(nextPump);
+    setNotes(nextNotes);
+    setFeedbackDirty(true);
+    try {
+      localStorage.setItem(
+        feedbackKey,
+        JSON.stringify({ pump: nextPump, notes: nextNotes }),
+      );
+    } catch {
+      /* Keep values in memory. */
+    }
   }
   const timed =
     exercise.trackingType === "time" ||
@@ -662,292 +708,324 @@ function ExerciseCard({
   }
 
   return (
-    <section className="surface p-5 sm:p-6"><fieldset disabled={busy || disabled} className="min-w-0 space-y-4">
-      <header>
-        <p className="eyebrow">Exercise {String(index + 1).padStart(2, "0")}</p>
-        <h2 className="mt-1 text-xl font-semibold">{exercise.name}</h2>
-        {exercise.equipmentLabel && (
-          <p className="muted text-sm">{exercise.equipmentLabel}</p>
-        )}
-        <p className="muted mt-1 text-sm">
-          {exercise.targetSets} working sets ·{" "}
-          {timed
-            ? `${exercise.timeTargetSeconds ?? "—"} seconds`
-            : `${exercise.repMin ?? "—"}–${exercise.repMax ?? "—"} reps`}
-        </p>
-      </header>
-      <p className="status-message text-sm">{exercise.suggestion.message}</p>
-      {exercise.sets.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-sm font-semibold">Saved sets</p>
-          <ol className="divide-y divide-[#ded9ce]">
-            {exercise.sets.map((set, setIndex) => (
-              <li
-                key={set.id}
-                className="flex flex-wrap items-center justify-between gap-2 py-3"
-              >
-                <div className="text-sm">
-                  <span className="muted mr-3 tabular-nums">
-                    {setIndex + 1}
-                  </span>
-                  <strong>
-                    {set.weight_kg !== null ? `${set.weight_kg} kg · ` : ""}
-                    {set.reps !== null
-                      ? `${set.reps} reps`
-                      : `${set.duration_seconds}s`}
-                  </strong>
-                  <p className="muted ml-5 text-xs">
-                    {set.set_kind === "warmup"
-                      ? "Warm-up"
-                      : set.set_kind === "drop"
-                        ? "Drop set"
-                        : "Working set"}
-                    {set.rir !== null ? ` · ${set.rir} reps left` : ""}
-                  </p>
-                </div>
-                <div className="flex gap-1">
-                  <button
-                    className="quiet-action text-sm"
-                    disabled={busy || disabled}
-                    onClick={() => copy(set, true)}
-                    aria-label={`Edit set ${setIndex + 1}`}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    className="quiet-action text-sm"
-                    disabled={busy || disabled}
-                    onClick={() => setRemoveId(set.id)}
-                    aria-label={`Delete set ${setIndex + 1}`}
-                  >
-                    Delete
-                  </button>
-                </div>
-                {removeId === set.id && (
-                  <div className="w-full space-y-2 rounded-lg bg-[#eee9df] p-3">
-                    <p className="text-sm">Delete this set?</p>
-                    <div className="flex gap-2">
-                      <button
-                        className="danger-action"
-                        disabled={busy || disabled}
-                        onClick={() =>
-                          perform(async () => {
-                            await save({
-                              action: "delete-set",
-                              workoutExerciseId: exercise.id,
-                              setId: set.id,
-                            });
-                            onSets(
-                              exercise.sets.filter(
-                                (item) => item.id !== set.id,
-                              ),
-                            );
-                            setRemoveId(null);
-                            if (draft.id === set.id) {
-                              setDraft(blankDraft());
-                              setDirty(false);
-                              try {
-                                localStorage.removeItem(draftKey);
-                              } catch {}
-                            }
-                            setMessage("Set deleted.");
-                          })
-                        }
-                      >
-                        {busy ? "Deleting…" : "Delete Set"}
-                      </button>
-                      <button
-                        className="secondary-action"
-                        disabled={busy}
-                        onClick={() => setRemoveId(null)}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
-      {error && (
-        <p className="status-message" data-tone="error" role="alert">
-          {error} Your inputs have been kept. Retry when you’re ready.
-        </p>
-      )}
-      {message && (
-        <p className="status-message" data-tone="success" role="status">
-          {message}
-        </p>
-      )}
-      <form className="space-y-3" onSubmit={submit}>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-semibold">
-            {editing ? "Edit set" : "Log a set"}
-          </h3>
-          {exercise.sets.length > 0 && (
-            <button
-              type="button"
-              className="quiet-action text-sm"
-              disabled={busy || disabled}
-              onClick={() => copy(exercise.sets[exercise.sets.length - 1])}
-            >
-              Copy Last Set
-            </button>
+    <section className="surface p-5 sm:p-6">
+      <fieldset disabled={busy || disabled} className="min-w-0 space-y-4">
+        <header>
+          <p className="eyebrow">
+            Exercise {String(index + 1).padStart(2, "0")}
+          </p>
+          <h2 className="mt-1 text-xl font-semibold">{exercise.name}</h2>
+          {exercise.equipmentLabel && (
+            <p className="muted text-sm">{exercise.equipmentLabel}</p>
           )}
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="field">
-            Set type
-            <select
-              value={draft.kind}
-              onChange={(event) =>
-                change({ ...draft, kind: event.target.value as Draft["kind"] })
-              }
-            >
-              <option value="working">Working</option>
-              <option value="warmup">Warm-up</option>
-              <option value="drop">Drop</option>
-            </select>
-          </label>
-          <label className="field">
-            {weighted ? "Weight (kg)" : "Added weight (kg)"}
-            <input
-              type="number"
-              inputMode="decimal"
-              step="0.01"
-              min="0"
-              max="9999.99"
-              required={weighted}
-              value={draft.weight}
-              onChange={(event) =>
-                change({ ...draft, weight: event.target.value })
-              }
-              placeholder={weighted ? "0" : "Optional"}
-            />
-          </label>
-          <label className="field">
-            {timed ? "Seconds" : "Reps"}
-            <input
-              type="number"
-              inputMode="numeric"
-              min="1"
-              max={timed ? 86400 : 1000}
-              step="1"
-              required
-              value={draft.amount}
-              onChange={(event) =>
-                change({ ...draft, amount: event.target.value })
-              }
-            />
-          </label>
-          {!timed && (
+          <p className="muted mt-1 text-sm">
+            {exercise.targetSets} working sets ·{" "}
+            {timed
+              ? `${exercise.timeTargetSeconds ?? "—"} seconds`
+              : `${exercise.repMin ?? "—"}–${exercise.repMax ?? "—"} reps`}
+          </p>
+        </header>
+        <p className="status-message text-sm">{exercise.suggestion.message}</p>
+        {exercise.sets.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm font-semibold">Saved sets</p>
+            <ol className="divide-y divide-[#ded9ce]">
+              {exercise.sets.map((set, setIndex) => (
+                <li
+                  key={set.id}
+                  className="flex flex-wrap items-center justify-between gap-2 py-3"
+                >
+                  <div className="text-sm">
+                    <span className="muted mr-3 tabular-nums">
+                      {setIndex + 1}
+                    </span>
+                    <strong>
+                      {set.weight_kg !== null ? `${set.weight_kg} kg · ` : ""}
+                      {set.reps !== null
+                        ? `${set.reps} reps`
+                        : `${set.duration_seconds}s`}
+                    </strong>
+                    <p className="muted ml-5 text-xs">
+                      {set.set_kind === "warmup"
+                        ? "Warm-up"
+                        : set.set_kind === "drop"
+                          ? "Drop set"
+                          : "Working set"}
+                      {set.rir !== null ? ` · ${set.rir} reps left` : ""}
+                    </p>
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      className="quiet-action text-sm"
+                      disabled={busy || disabled}
+                      onClick={() => copy(set, true)}
+                      aria-label={`Edit set ${setIndex + 1}`}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="quiet-action text-sm"
+                      disabled={busy || disabled}
+                      onClick={() => setRemoveId(set.id)}
+                      aria-label={`Delete set ${setIndex + 1}`}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  {removeId === set.id && (
+                    <div className="w-full space-y-2 rounded-lg bg-[#eee9df] p-3">
+                      <p className="text-sm">Delete this set?</p>
+                      <div className="flex gap-2">
+                        <button
+                          className="danger-action"
+                          disabled={busy || disabled}
+                          onClick={() =>
+                            perform(async () => {
+                              await save({
+                                action: "delete-set",
+                                workoutExerciseId: exercise.id,
+                                setId: set.id,
+                              });
+                              onSets(
+                                exercise.sets.filter(
+                                  (item) => item.id !== set.id,
+                                ),
+                              );
+                              setRemoveId(null);
+                              if (draft.id === set.id) {
+                                setDraft(blankDraft());
+                                setDirty(false);
+                                try {
+                                  localStorage.removeItem(draftKey);
+                                } catch {}
+                              }
+                              setMessage("Set deleted.");
+                            })
+                          }
+                        >
+                          {busy ? "Deleting…" : "Delete Set"}
+                        </button>
+                        <button
+                          className="secondary-action"
+                          disabled={busy}
+                          onClick={() => setRemoveId(null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+        {error && (
+          <p className="status-message" data-tone="error" role="alert">
+            {error} Your inputs have been kept. Retry when you’re ready.
+          </p>
+        )}
+        {message && (
+          <p className="status-message" data-tone="success" role="status">
+            {message}
+          </p>
+        )}
+        <form className="space-y-3" onSubmit={submit}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-semibold">
+              {editing ? "Edit set" : "Log a set"}
+            </h3>
+            {exercise.sets.length > 0 && (
+              <button
+                type="button"
+                className="quiet-action text-sm"
+                disabled={busy || disabled}
+                onClick={() => copy(exercise.sets[exercise.sets.length - 1])}
+              >
+                Copy Last Set
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <label className="field">
-              Reps left <span className="muted font-normal">(optional)</span>
+              Set type
+              <select
+                value={draft.kind}
+                onChange={(event) =>
+                  change({
+                    ...draft,
+                    kind: event.target.value as Draft["kind"],
+                  })
+                }
+              >
+                <option value="working">Working</option>
+                <option value="warmup">Warm-up</option>
+                <option value="drop">Drop</option>
+              </select>
+            </label>
+            <label className="field">
+              {weighted ? "Weight (kg)" : "Added weight (kg)"}
+              <input
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                max="9999.99"
+                required={weighted}
+                value={draft.weight}
+                onChange={(event) =>
+                  change({ ...draft, weight: event.target.value })
+                }
+                placeholder={weighted ? "0" : "Optional"}
+              />
+            </label>
+            <label className="field">
+              {timed ? "Seconds" : "Reps"}
               <input
                 type="number"
                 inputMode="numeric"
-                min="0"
-                max="10"
+                min="1"
+                max={timed ? 86400 : 1000}
                 step="1"
-                value={draft.rir}
+                required
+                value={draft.amount}
                 onChange={(event) =>
-                  change({ ...draft, rir: event.target.value })
+                  change({ ...draft, amount: event.target.value })
                 }
-                placeholder="0–10"
               />
             </label>
+            {!timed && (
+              <label className="field">
+                Reps left <span className="muted font-normal">(optional)</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min="0"
+                  max="10"
+                  step="1"
+                  value={draft.rir}
+                  onChange={(event) =>
+                    change({ ...draft, rir: event.target.value })
+                  }
+                  placeholder="0–10"
+                />
+              </label>
+            )}
+          </div>
+          {!timed && (
+            <p className="muted text-xs">
+              Reps left: how many more reps you could have done with good form.
+            </p>
           )}
-        </div>
-        {!timed && (
-          <p className="muted text-xs">
-            Reps left: how many more reps you could have done with good form.
-          </p>
-        )}
-        {dirty && (
-          <p className="muted text-xs">
-            Unsaved changes · tap {editing ? "Update" : "Save"} Set to sync.
-          </p>
-        )}
-        <div className="flex gap-2">
-          <button className="primary-action flex-1" disabled={busy || disabled}>
-            {busy ? "Saving…" : editing ? "Update Set" : "Save Set"}
-          </button>
           {dirty && (
-            <button
-              type="button"
-              className="secondary-action"
-              disabled={busy}
-              onClick={() => {
-                setDraft(blankDraft());
-                setDirty(false);
-                try {
-                  localStorage.removeItem(draftKey);
-                } catch {}
-              }}
-            >
-              Discard Changes
-            </button>
+            <p className="muted text-xs">
+              Unsaved changes · tap {editing ? "Update" : "Save"} Set to sync.
+            </p>
           )}
-        </div>
-      </form>
-      <details className="text-sm">
-        <summary className="quiet-action cursor-pointer">
-          Exercise notes & feeling
-        </summary>
-        <div className="mt-3 space-y-3">
-          <label className="field">
-            Muscle pump
-            <select
-              value={pump}
-              onChange={(event) => changeFeedback(event.target.value, notes)}
+          <div className="flex gap-2">
+            <button
+              className="primary-action flex-1"
+              disabled={busy || disabled}
             >
-              <option value="">Not recorded</option>
-              {[1, 2, 3, 4, 5].map((rating) => (
-                <option key={rating} value={rating}>
-                  {rating} / 5
-                  {rating === 1
-                    ? " — Minimal"
-                    : rating === 5
-                      ? " — Strong"
-                      : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            Exercise notes
-            <textarea
-              rows={2}
-              maxLength={1000}
-              value={notes}
-              onChange={(event) => changeFeedback(pump, event.target.value)}
-              placeholder="Form, discomfort, or equipment settings"
-            />
-          </label>
-          <button
-            className="secondary-action"
-            disabled={busy || disabled}
-            onClick={() =>
-              perform(async () => {
-                await save({
-                  action: "feedback",
-                  workoutExerciseId: exercise.id,
-                  pumpRating: pump,
-                  notes,
-                });
-                setMessage("Exercise notes saved.");
-                setFeedbackDirty(false); setSavedFeedback({pump, notes});
-                try { localStorage.removeItem(feedbackKey); } catch {}
-              })
-            }
-          >
-            {busy ? "Saving…" : "Save Notes"}
-          </button>
-          {feedbackDirty && <><p className="muted text-xs">Exercise notes have unsaved changes.</p><button className="quiet-action" onClick={() => { setPump(savedFeedback.pump); setNotes(savedFeedback.notes); setFeedbackDirty(false); try { localStorage.removeItem(feedbackKey); } catch {} }}>Discard Note Changes</button></>}
-        </div>
-      </details>
-    </fieldset></section>
+              {busy ? "Saving…" : editing ? "Update Set" : "Save Set"}
+            </button>
+            {dirty && (
+              <button
+                type="button"
+                className="secondary-action"
+                disabled={busy}
+                onClick={() => {
+                  setDraft(blankDraft());
+                  setDirty(false);
+                  try {
+                    localStorage.removeItem(draftKey);
+                  } catch {}
+                }}
+              >
+                Discard Changes
+              </button>
+            )}
+          </div>
+        </form>
+        <details className="text-sm">
+          <summary className="quiet-action cursor-pointer">
+            Exercise notes & feeling
+          </summary>
+          <div className="mt-3 space-y-3">
+            <label className="field">
+              Muscle pump
+              <select
+                value={pump}
+                onChange={(event) => changeFeedback(event.target.value, notes)}
+              >
+                <option value="">Not recorded</option>
+                {[1, 2, 3, 4, 5].map((rating) => (
+                  <option key={rating} value={rating}>
+                    {rating} / 5
+                    {rating === 1
+                      ? " — Minimal"
+                      : rating === 5
+                        ? " — Strong"
+                        : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              Exercise notes
+              <textarea
+                rows={2}
+                maxLength={1000}
+                value={notes}
+                onChange={(event) => changeFeedback(pump, event.target.value)}
+                placeholder="Form, discomfort, or equipment settings"
+              />
+            </label>
+            <button
+              className="secondary-action"
+              disabled={busy || disabled}
+              onClick={() =>
+                perform(async () => {
+                  await save({
+                    action: "feedback",
+                    workoutExerciseId: exercise.id,
+                    pumpRating: pump,
+                    notes,
+                  });
+                  setMessage("Exercise notes saved.");
+                  setFeedbackDirty(false);
+                  setSavedFeedback({ pump, notes });
+                  try {
+                    localStorage.removeItem(feedbackKey);
+                  } catch {}
+                })
+              }
+            >
+              {busy ? "Saving…" : "Save Notes"}
+            </button>
+            {feedbackDirty && (
+              <>
+                <p className="muted text-xs">
+                  Exercise notes have unsaved changes.
+                </p>
+                <button
+                  className="quiet-action"
+                  onClick={() => {
+                    setPump(savedFeedback.pump);
+                    setNotes(savedFeedback.notes);
+                    setFeedbackDirty(false);
+                    try {
+                      localStorage.removeItem(feedbackKey);
+                    } catch {}
+                  }}
+                >
+                  Discard Note Changes
+                </button>
+              </>
+            )}
+          </div>
+        </details>
+      </fieldset>
+    </section>
   );
 }
