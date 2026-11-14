@@ -69,6 +69,8 @@ try {
     movement = randomUUID(),
     timed = randomUUID(),
     muscle = randomUUID(),
+    triceps = randomUUID(),
+    shoulders = randomUUID(),
     equipment = randomUUID(),
     timedEquipment = randomUUID();
   await db.query(
@@ -87,10 +89,64 @@ try {
   );
   await db.query("insert into muscles(id,name) values($1,'Chest')", [muscle]);
   await db.query(
+    "insert into muscles(id,name) values($1,'Triceps'),($2,'Shoulders')",
+    [triceps, shoulders],
+  );
+  const replaceMuscles =
+    "select replace_exercise_muscles($1,$2::uuid[],$3::uuid[])";
+  await db.query(replaceMuscles, [movement, [muscle], [triceps, shoulders]]);
+  const contributions =
+    "select string_agg(m.name || ':' || em.contribution, ',' order by m.name) from exercise_muscles em join muscles m on m.id=em.muscle_id where em.exercise_id=$1";
+  await equal(
+    "save primary and multiple secondary muscles together",
+    contributions,
+    "Chest:1.00,Shoulders:0.50,Triceps:0.50",
+    [movement],
+  );
+  await denied(
+    "invalid muscle leaves previous assignments intact",
+    replaceMuscles,
+    [movement, [muscle], [randomUUID()]],
+  );
+  await equal(
+    "invalid request preserves the whole previous selection",
+    contributions,
+    "Chest:1.00,Shoulders:0.50,Triceps:0.50",
+    [movement],
+  );
+  await denied("the same muscle cannot hold both roles", replaceMuscles, [
+    movement,
+    [muscle],
+    [muscle],
+  ]);
+  await db.query(replaceMuscles, [timed, [shoulders], []]);
+  await db.query(replaceMuscles, [movement, [triceps], [muscle]]);
+  await equal(
+    "edit roles and remove unchecked assignments",
+    contributions,
+    "Chest:0.50,Triceps:1.00",
+    [movement],
+  );
+  await equal(
+    "replacing mappings affects only the selected exercise",
+    contributions,
+    "Shoulders:1.00",
+    [timed],
+  );
+  await db.query(replaceMuscles, [timed, [], []]);
+  await equal("clear all assignments in one save", contributions, null, [
+    timed,
+  ]);
+  await db.query(
     "insert into gym_exercises(id,gym_id,exercise_id) values($1,$2,$3),($4,$2,$5)",
     [equipment, gym, movement, timedEquipment, timed],
   );
   await login(a);
+  await denied(
+    "member cannot replace exercise muscle assignments",
+    replaceMuscles,
+    [movement, [], []],
+  );
   await equal(
     "signup metadata cannot grant admin",
     "select role::text from profiles where id=auth.uid()",

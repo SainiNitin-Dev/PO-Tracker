@@ -4,13 +4,14 @@ A private training app built with Next.js, Supabase Auth/Postgres/Storage, and V
 
 ## Upgrading the existing deployment
 
-The overhaul needs **four new migrations before its application code goes live**. Do not rerun migrations already applied.
+Apply any missing migrations below before deploying this version.
 
 1. Retain a database export using your normal backup process. In Supabase SQL Editor, run the complete contents of these files in order, once each:
    - `supabase/migrations/0009_security_and_catalog.sql`
    - `supabase/migrations/0010_reliable_training.sql`
    - `supabase/migrations/0011_coach_and_photo_reliability.sql`
    - `supabase/migrations/0012_progress_and_profile.sql`
+   - `supabase/migrations/0013_bulk_muscle_mapping.sql`
 2. Each file must finish successfully before continuing. These updates retain accounts, workout rows, catalog references, photos and chat history. Catalog removal archives items instead of deleting historical references.
 3. In Supabase **Authentication → URL Configuration**, set the Site URL to your production origin, and allow these exact redirect URLs:
    - `https://personalised-overload-tracker.vercel.app/set-password`
@@ -44,7 +45,7 @@ Invited members open the email, choose a password, and sign in. Existing members
 
 ## Fresh installation
 
-Run all migration files 0001–0012 in numeric order on an empty Supabase project. Create your first account in Supabase Auth and promote it once from SQL Editor:
+Run all migration files 0001–0013 in numeric order on an empty Supabase project. Create your first account in Supabase Auth and promote it once from SQL Editor:
 
 ```sql
 update public.profiles set role = 'admin' where id = '<AUTH_USER_UUID>';

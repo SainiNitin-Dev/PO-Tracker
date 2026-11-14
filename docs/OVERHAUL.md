@@ -8,7 +8,7 @@ This release replaces the inconsistent dark/bright-accent UI with a shared cream
 | --- | --- | --- |
 | Authentication | Cookie/session inconsistencies, unclear invitations and recovery | SSR cookie refresh, shared account guards, invite tokens/PKCE callbacks, password setup/recovery, account identity and logout |
 | Authorization | Profile role changes and cross-owner references could weaken privacy | Display-name-only profile updates; owner checks and restrictive RLS for member tables/storage; catalog administrators excluded from private training data |
-| Catalog | Foreign-key failures on removal, no safe bulk cleanup, confusing forms | Archive single/all gyms, exercises and gym availability; archive child availability atomically; search, edit, labels, dialogs and visible outcomes; historical references retained |
+| Catalog | Foreign-key failures on removal, no safe bulk cleanup, confusing forms | Archive gyms, exercises and gym availability without losing historical references. Assign all primary and secondary muscles for an exercise in one save. |
 | Programs | Incomplete editing and fragile ordering | Create/select/activate/rename/delete plans, edit/reorder/remove days and exercises, type-specific targets, atomic active-plan and reorder operations |
 | Workouts | Reps/time constraint failures, duplicate retries, partial starts | Validated tracking fields, atomic start/resume, target snapshots, stable set request IDs, edit/delete/copy sets and bounded saves |
 | Workout recovery | Inputs lost on failure/refresh or at finish | Account/session-scoped local drafts for sets, notes and rest timer; explicit unsaved state; finish disabled until set/feedback edits saved or discarded; session locking across save/finish requests |
@@ -25,7 +25,7 @@ This release replaces the inconsistent dark/bright-accent UI with a shared cream
 The local verification uses isolated database records and explicitly labelled temporary UI fixtures. Those fixture routes are removed before the release build; no demonstration accounts or training records are added to the shipped app.
 
 - Unit/API tests cover validation, profile ownership, metrics, volume targets, progression, weekly totals, experiment periods, coach fact generation/response validation, photo validation and metadata-aware review reuse.
-- `npm run test:db` applies all twelve migrations to real embedded PostgreSQL and checks ownership, privilege restrictions, atomic workout creation, retry behavior, reps/time constraints, edit/delete/finish behavior, archival with referenced history, plan deletion, coach exchanges and quotas, experiments and photo metadata cleanup.
+- `npm run test:db` applies all migrations to embedded PostgreSQL and checks ownership, permissions, bulk muscle mapping, workout creation and retries, set validation and editing, archival, plan deletion, coach exchanges and quotas, experiments, and photo metadata cleanup.
 - Browser checks use mobile (390 × 844) and desktop (1366 × 900) viewports. Tested landing/login states, catalog navigation and forms, bulk-removal confirmation, plan exercise editing and confirmation cancellation, history expansion, progress target controls, profile, coach notes, and photo empty/configuration states.
 - Workout browser checks verify pending/disabled feedback, failure preserving input, restored set and exercise-note drafts after refresh, and blocking finish while changes are unsaved. A date hydration mismatch found during testing was corrected.
 - Lint, type checking and production build must pass on the final commit. Dependency audit is checked against the final lockfile.
@@ -42,7 +42,7 @@ The previous service worker’s ownerless offline mutation queue is deliberately
 
 ## Deployment order
 
-1. Apply 0009, 0010, 0011 and 0012 once each to the existing Supabase schema, in that order. Existing migrations 0001–0008 remain unchanged.
+1. Apply the missing migrations from 0009 through 0013 to the existing Supabase schema in numeric order.
 2. Update the Auth redirect allowlist for `/set-password` and `/auth/confirm` on the intended deployment origin.
 3. Deploy the reviewed application commit using Vercel’s configured production branch after the SQL updates succeed.
 4. Complete the live checks below. Keep the preceding deployment available as a rollback; do not reverse migrations by deleting user data.

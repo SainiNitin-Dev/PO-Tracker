@@ -18,6 +18,30 @@ export async function POST(request: Request) {
         .from("muscles")
         .insert({ name: textValue(body.name, "Muscle name", { max: 80 }) });
       if (error) throw error;
+    } else if (body.action === "replace") {
+      if (
+        !Array.isArray(body.primary) ||
+        !Array.isArray(body.secondary) ||
+        body.primary.length + body.secondary.length > 250
+      )
+        throw new HttpError(400, "Select up to 250 muscles.");
+      const primary = body.primary.map((id) =>
+        uuid(id, "muscle").toLowerCase(),
+      );
+      const secondary = body.secondary.map((id) =>
+        uuid(id, "muscle").toLowerCase(),
+      );
+      if (
+        new Set([...primary, ...secondary]).size !==
+        primary.length + secondary.length
+      )
+        throw new HttpError(400, "Each muscle can have only one role.");
+      const { error } = await supabase.rpc("replace_exercise_muscles", {
+        p_exercise_id: uuid(body.exerciseId, "exercise"),
+        p_primary: primary,
+        p_secondary: secondary,
+      });
+      if (error) throw error;
     } else if (body.action === "map") {
       const contribution = numberValue(body.contribution, "Contribution", {
         min: 0.5,
