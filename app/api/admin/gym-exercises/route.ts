@@ -31,19 +31,17 @@ export async function POST(request: Request) {
     ]);
     if (results.some((result) => result.error || !result.data))
       throw new HttpError(400, "Choose an active gym and exercise.");
-    const { error } = await supabase
-      .from("gym_exercises")
-      .upsert(
-        {
-          gym_id: gymId,
-          exercise_id: exerciseId,
-          equipment_label:
-            textValue(body.equipmentLabel ?? "", "Machine label", { min: 0 }) ||
-            null,
-          archived_at: null,
-        },
-        { onConflict: "gym_id,exercise_id" },
-      );
+    const { error } = await supabase.from("gym_exercises").upsert(
+      {
+        gym_id: gymId,
+        exercise_id: exerciseId,
+        equipment_label:
+          textValue(body.equipmentLabel ?? "", "Machine label", { min: 0 }) ||
+          null,
+        archived_at: null,
+      },
+      { onConflict: "gym_id,exercise_id" },
+    );
     if (error) throw error;
     return NextResponse.json({ ok: true });
   } catch (error) {

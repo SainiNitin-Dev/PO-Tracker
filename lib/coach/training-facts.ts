@@ -214,7 +214,9 @@ export function buildTrainingFacts(input: {
             0,
             ...exercise.workout_sets
               .filter((set) => set.set_kind === "working")
-              .map((set) => estimateOneRepMax(Number(set.weight_kg), Number(set.reps))),
+              .map((set) =>
+                estimateOneRepMax(Number(set.weight_kg), Number(set.reps)),
+              ),
           );
         const latestEstimate = bestEstimate(latest.exercise),
           previousEstimate = bestEstimate(rows[1].exercise);
@@ -255,7 +257,11 @@ export function buildTrainingFacts(input: {
     }
   } else add("You do not have an active training plan.", "Training plans");
   const metrics = input.metrics
-    .filter((metric) => metric.bodyweight_kg !== null && Date.parse(metric.recorded_at) <= now.getTime())
+    .filter(
+      (metric) =>
+        metric.bodyweight_kg !== null &&
+        Date.parse(metric.recorded_at) <= now.getTime(),
+    )
     .sort((a, b) => Date.parse(b.recorded_at) - Date.parse(a.recorded_at));
   if (metrics[0])
     add(

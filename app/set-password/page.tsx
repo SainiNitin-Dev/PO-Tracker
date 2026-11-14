@@ -12,7 +12,9 @@ export default function SetPasswordPage() {
     "loading",
   );
   const [saving, setSaving] = useState(false);
-  const codeExchange = useRef<ReturnType<NonNullable<typeof supabase>["auth"]["exchangeCodeForSession"]> | null>(null);
+  const codeExchange = useRef<ReturnType<
+    NonNullable<typeof supabase>["auth"]["exchangeCodeForSession"]
+  > | null>(null);
   const supabase = useMemo(
     () =>
       process.env.NEXT_PUBLIC_SUPABASE_URL &&

@@ -36,8 +36,7 @@ export function apiError(error: unknown) {
     "42501": "You don’t have permission to make this change.",
     PGRST116:
       "This item is no longer available. Refresh the page and try again.",
-    P0002:
-      "This item is no longer available. Refresh the page and try again.",
+    P0002: "This item is no longer available. Refresh the page and try again.",
     "22023": "Some form values are invalid. Check your entries and try again.",
     PGRST202:
       "The database needs the latest update. Ask your administrator to apply the new migrations.",
@@ -47,9 +46,16 @@ export function apiError(error: unknown) {
       "The database needs the latest update. Ask your administrator to apply the new migrations.",
   };
   const statuses: Record<string, number> = {
-    "23505": 409, "23503": 409, "23514": 400, "42501": 403,
-    "22023": 400, P0002: 404, PGRST116: 404,
-    PGRST202: 503, "42703": 503, "42P01": 503,
+    "23505": 409,
+    "23503": 409,
+    "23514": 400,
+    "42501": 403,
+    "22023": 400,
+    P0002: 404,
+    PGRST116: 404,
+    PGRST202: 503,
+    "42703": 503,
+    "42P01": 503,
   };
   return NextResponse.json(
     {

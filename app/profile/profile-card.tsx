@@ -129,7 +129,9 @@ export default function ProfileCard({
       "Body weight saved.",
     );
   };
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Asia/Kolkata",
+  });
   return (
     <main className="app-page">
       <header className="page-header">

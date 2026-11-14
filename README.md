@@ -22,6 +22,8 @@ The overhaul needs **four new migrations before its application code goes live**
 
 If SQL reports an existing relation or policy, stop and check which files have already been applied rather than deleting tables. Files 0009–0012 are updates, not a database reset. Manually running SQL Editor files does not automatically populate the Supabase CLI migration history.
 
+If you already ran the early version of `0010_reliable_training.sql` from the interim overhaul, run the current version of that file again. It safely updates the workout functions and installs the new set removal and exercise feedback functions. Skip the other migrations you have already applied.
+
 ## Environment variables
 
 | Variable | Value / purpose |

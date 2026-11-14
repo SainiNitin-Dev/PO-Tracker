@@ -366,7 +366,19 @@ export default function AdminConsole({
                 ))}
               </select>
             </label>
-            {editingExercise && <><input type="hidden" name="trackingType" value={editingExercise.tracking_type} /><p className="muted text-sm">Tracking stays the same to keep past workouts accurate. Add a new exercise for a different tracking type.</p></>}
+            {editingExercise && (
+              <>
+                <input
+                  type="hidden"
+                  name="trackingType"
+                  value={editingExercise.tracking_type}
+                />
+                <p className="muted text-sm">
+                  Tracking stays the same to keep past workouts accurate. Add a
+                  new exercise for a different tracking type.
+                </p>
+              </>
+            )}
             <div className="flex flex-wrap gap-2">
               <button disabled={busy} className="primary-action">
                 {working === "exercise"

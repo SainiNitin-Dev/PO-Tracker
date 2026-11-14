@@ -46,15 +46,49 @@ describe("progression engine", () => {
     expect(estimateOneRepMax(100, 1.5)).toBe(0);
   });
   it("waits for all planned working sets and ignores warm-ups", () => {
-    expect(getSuggestion({trackingType:"reps",incrementKg:2.5,repMin:8,repMax:12,targetSets:2,latestSets:[working(12),{...working(12),setKind:"warmup"}]}).action).toBe("hold");
+    expect(
+      getSuggestion({
+        trackingType: "reps",
+        incrementKg: 2.5,
+        repMin: 8,
+        repMax: 12,
+        targetSets: 2,
+        latestSets: [working(12), { ...working(12), setKind: "warmup" }],
+      }).action,
+    ).toBe("hold");
   });
   it("does not increase with unknown effort or different loads", () => {
-    for (const sets of [[{...working(12),rir:null}], [working(12),{...working(12),weightKg:50}]]) {
-      expect(getSuggestion({trackingType:"reps",incrementKg:2.5,repMin:8,repMax:12,latestSets:sets}).action).toBe("add_rep");
+    for (const sets of [
+      [{ ...working(12), rir: null }],
+      [working(12), { ...working(12), weightKg: 50 }],
+    ]) {
+      expect(
+        getSuggestion({
+          trackingType: "reps",
+          incrementKg: 2.5,
+          repMin: 8,
+          repMax: 12,
+          latestSets: sets,
+        }).action,
+      ).toBe("add_rep");
     }
   });
   it("uses seconds for timed exercises", () => {
-    expect(getSuggestion({trackingType:"time",incrementKg:2.5,timeTargetSeconds:60,latestSets:[{...working(0),reps:null,durationSeconds:30}]}).action).toBe("add_time");
-    expect(getSuggestion({trackingType:"weighted_time",incrementKg:2.5,timeTargetSeconds:60,latestSets:[{...working(0),reps:null,durationSeconds:60}]}).action).toBe("add_load_or_variation");
+    expect(
+      getSuggestion({
+        trackingType: "time",
+        incrementKg: 2.5,
+        timeTargetSeconds: 60,
+        latestSets: [{ ...working(0), reps: null, durationSeconds: 30 }],
+      }).action,
+    ).toBe("add_time");
+    expect(
+      getSuggestion({
+        trackingType: "weighted_time",
+        incrementKg: 2.5,
+        timeTargetSeconds: 60,
+        latestSets: [{ ...working(0), reps: null, durationSeconds: 60 }],
+      }).action,
+    ).toBe("add_load_or_variation");
   });
 });

@@ -138,12 +138,10 @@ export async function completeCoachMessage(
   const raw = await providerRequest("CHAT", {
     messages: [
       { role: "system", content: system },
-      ...history
-        .slice(-10)
-        .map((message) => ({
-          role: message.role,
-          content: message.content.slice(0, 6000),
-        })),
+      ...history.slice(-10).map((message) => ({
+        role: message.role,
+        content: message.content.slice(0, 6000),
+      })),
     ],
   });
   return validateCoachReply(raw, snapshot.facts);

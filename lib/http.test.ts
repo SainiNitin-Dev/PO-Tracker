@@ -80,7 +80,13 @@ describe("mutation boundaries", () => {
     expect((await failure.json()).error).not.toContain("private_table");
   });
   it("distinguishes correctable inputs and missing records from server errors", async () => {
-    for (const [code, status] of [["23514", 400], ["23503", 409], ["22023", 400], ["P0002", 404], ["PGRST202", 503]] as const) {
+    for (const [code, status] of [
+      ["23514", 400],
+      ["23503", 409],
+      ["22023", 400],
+      ["P0002", 404],
+      ["PGRST202", 503],
+    ] as const) {
       const response = apiError({ code, message: "internal database detail" });
       expect(response.status).toBe(status);
       expect((await response.json()).error).not.toContain("internal database");
