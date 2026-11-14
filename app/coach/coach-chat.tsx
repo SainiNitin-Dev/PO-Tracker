@@ -75,6 +75,7 @@ export default function CoachChat({
   const [status, setStatus] = useState("");
   const end = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
+  const firstChat = useRef<string | null>(null);
   const firstRender = useRef(true);
   useEffect(() => {
     if (firstRender.current) {
@@ -85,7 +86,7 @@ export default function CoachChat({
   }, [messages, busy]);
 
   const send = async (retry = false) => {
-    if (chatBusy || !chatId || (pending && !retry)) return;
+    if (chatBusy) return;
     const draft =
       retry && pending
         ? pending
@@ -97,10 +98,19 @@ export default function CoachChat({
     setError("");
     setStatus("");
     try {
+      let target = chatId;
+      if (!target) {
+        firstChat.current ??= crypto.randomUUID();
+        const chat = await coachRequest("POST", {
+          action: "new-chat",
+          id: firstChat.current,
+        });
+        target = chat.id;
+      }
       const data = await coachRequest("POST", {
         message: draft.text,
         requestId: draft.id,
-        chatId,
+        chatId: target,
       });
       const now = new Date().toISOString();
       setMessages((old) => [
@@ -120,7 +130,12 @@ export default function CoachChat({
         },
       ]);
       setPending(null);
-      if (!messages.length) router.refresh();
+      if (!chatId && target) {
+        startNavigation(() => {
+          router.replace(chatUrl(target, 1));
+          router.refresh();
+        });
+      } else if (!messages.length) router.refresh();
     } catch (failure) {
       setError(
         failure instanceof Error && failure.name !== "TimeoutError"
@@ -467,26 +482,26 @@ export default function CoachChat({
             <p>
               {chatId
                 ? "Ask about a movement, a tough session, or what your recent logs show."
-                : "Start a new chat or open one from your saved chats."}
+                : "Type a message below to start a new chat, or open one from your saved chats."}
             </p>
-            {chatId && (
-              <div className="flex flex-wrap gap-2 mt-4">
-                {starters.map((starter) => (
-                  <button
-                    type="button"
-                    key={starter}
-                    className="secondary-action text-sm"
-                    disabled={chatBusy || !chatId}
-                    onClick={() => {
-                      setText(starter);
-                      composer.current?.focus();
-                    }}
-                  >
-                    {starter}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="flex flex-wrap gap-2 mt-4">
+              {starters.map((starter) => (
+                <button
+                  type="button"
+                  key={starter}
+                  className="secondary-action text-sm"
+                  disabled={chatBusy}
+                  onClick={() => {
+                    setText(starter);
+                    setPending(null);
+                    setError("");
+                    composer.current?.focus();
+                  }}
+                >
+                  {starter}
+                </button>
+              ))}
+            </div>
           </div>
         )}
         {pending && (
@@ -546,11 +561,17 @@ export default function CoachChat({
           id="coach-message"
           ref={composer}
           value={text}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            setText(event.target.value);
+            if (pending) {
+              setPending(null);
+              setError("");
+            }
+          }}
           maxLength={2000}
           rows={2}
           placeholder="Ask about your training…"
-          disabled={chatBusy || !chatId || Boolean(pending)}
+          readOnly={busy || Boolean(chatAction) || navigating}
           className="w-full"
           onKeyDown={(event) => {
             if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
@@ -565,7 +586,7 @@ export default function CoachChat({
           </span>
           <button
             className="primary-action"
-            disabled={chatBusy || !chatId || !text.trim() || Boolean(pending)}
+            disabled={chatBusy || !text.trim()}
           >
             {busy ? "Thinking…" : "Send"}
           </button>

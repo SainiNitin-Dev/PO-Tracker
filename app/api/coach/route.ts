@@ -16,6 +16,26 @@ export async function POST(request: Request) {
     const { supabase, user } = await requireApiUser();
     const body = await readJson(request);
     if (body.action === "new-chat") {
+      if (body.id !== undefined) {
+        const id = uuid(body.id, "chat");
+        const { error } = await supabase
+          .from("coach_conversations")
+          .upsert(
+            { id, user_id: user.id },
+            { onConflict: "id", ignoreDuplicates: true },
+          );
+        if (error) throw error;
+        const { data, error: lookupError } = await supabase
+          .from("coach_conversations")
+          .select("id")
+          .eq("id", id)
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (lookupError) throw lookupError;
+        if (!data)
+          throw new HttpError(404, "This chat is no longer available.");
+        return NextResponse.json({ id: data.id });
+      }
       const { data, error } = await supabase
         .from("coach_conversations")
         .insert({ user_id: user.id })
