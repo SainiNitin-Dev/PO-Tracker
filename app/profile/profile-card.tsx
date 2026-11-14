@@ -176,6 +176,35 @@ export default function ProfileCard({
                 })}
               </p>
             </div>
+            {role === "user" && (
+              <details className="mt-4">
+                <summary>Member ID</summary>
+                <p className="muted my-2 text-sm">
+                  Share this ID with a friend who wants to copy their training
+                  plan to your account.
+                </p>
+                <p className="select-all break-all font-mono text-sm">
+                  {userId}
+                </p>
+                <button
+                  type="button"
+                  className="secondary-action mt-2"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(userId);
+                      setMessage({ text: "Member ID copied." });
+                    } catch {
+                      setMessage({
+                        text: "Select the member ID and copy it manually.",
+                        error: true,
+                      });
+                    }
+                  }}
+                >
+                  Copy member ID
+                </button>
+              </details>
+            )}
             <form onSubmit={saveName} className="mt-6 space-y-4">
               <label className="field">
                 What should we call you?

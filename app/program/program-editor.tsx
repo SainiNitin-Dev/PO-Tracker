@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition, type FormEvent } from "react";
+import { useRef, useState, useTransition, type FormEvent } from "react";
 import { requestJson } from "@/lib/client-request";
 import ConfirmDialog, { type Confirmation } from "@/components/confirm-dialog";
 
@@ -43,6 +43,7 @@ type Save = (
   body: object,
   method?: string,
   after?: (result: { id?: string }) => void,
+  success?: string,
 ) => Promise<void>;
 
 export default function ProgramEditor({
@@ -67,6 +68,11 @@ export default function ProgramEditor({
     error?: boolean;
   } | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const copyRequest = useRef<{
+    planId: string;
+    recipientId: string;
+    requestId: string;
+  } | null>(null);
   const router = useRouter();
   const program =
     programs.find((p) => p.id === selectedId) ??
@@ -75,13 +81,15 @@ export default function ProgramEditor({
   const selectedDays = days
     .filter((d) => d.program_id === program?.id)
     .sort((a, b) => a.sort_order - b.sort_order);
-  const save: Save = async (path, body, method = "POST", after) => {
+  const save: Save = async (path, body, method = "POST", after, success) => {
     setWorking(true);
     setMessage(null);
     try {
       const result = await requestJson<{ id?: string }>(path, body, method);
       after?.(result);
-      setMessage({ text: "Plan saved. Your past workouts are unchanged." });
+      setMessage({
+        text: success ?? "Plan saved. Your past workouts are unchanged.",
+      });
       transition(() => router.refresh());
     } catch (e) {
       setMessage({
@@ -232,6 +240,71 @@ export default function ProgramEditor({
                 </div>
               )}
             </details>
+            {program && (
+              <details key={program.id} className="mt-3">
+                <summary>Copy to a member</summary>
+                <p className="muted my-3 text-sm">
+                  Ask your friend to copy their member ID from Profile. They can
+                  find the copy under Your training plan and select Use this
+                  plan. The copy includes days, exercises, and targets.
+                </p>
+                <form
+                  className="flex flex-wrap items-end gap-3"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const form = event.currentTarget;
+                    const recipientId = String(
+                      new FormData(form).get("recipientId"),
+                    )
+                      .trim()
+                      .toLowerCase();
+                    setConfirmation({
+                      title: `Copy ${program.name} to this member?`,
+                      description: `Member ID: ${recipientId}. They’ll receive a separate copy to use or edit.`,
+                      label: "Copy plan",
+                      onConfirm: () => {
+                        if (
+                          copyRequest.current?.planId !== program.id ||
+                          copyRequest.current.recipientId !== recipientId
+                        ) {
+                          copyRequest.current = {
+                            planId: program.id,
+                            recipientId,
+                            requestId: crypto.randomUUID(),
+                          };
+                        }
+                        void save(
+                          "/api/programs/copy",
+                          copyRequest.current,
+                          "POST",
+                          () => {
+                            form.reset();
+                            copyRequest.current = null;
+                          },
+                          "Plan copied. Your friend can now choose it in their plan editor.",
+                        );
+                      },
+                    });
+                  }}
+                >
+                  <label className="field min-w-48 flex-1">
+                    Member ID
+                    <input
+                      name="recipientId"
+                      required
+                      maxLength={40}
+                      autoCapitalize="none"
+                      autoComplete="off"
+                      spellCheck={false}
+                      disabled={busy}
+                    />
+                  </label>
+                  <button className="secondary-action" disabled={busy}>
+                    Copy plan
+                  </button>
+                </form>
+              </details>
+            )}
           </>
         )}
         <details

@@ -64,6 +64,7 @@ try {
   }
   const a = randomUUID(),
     b = randomUUID(),
+    recipient = randomUUID(),
     admin = randomUUID(),
     gym = randomUUID(),
     movement = randomUUID(),
@@ -78,6 +79,7 @@ try {
     [a, b, admin],
   );
   await db.query("update profiles set role='admin' where id=$1", [admin]);
+  await db.query("insert into auth.users(id) values($1)", [recipient]);
   await login(admin);
   await db.query(
     "insert into gyms(id,name,weight_increment_kg) values($1,'Test Gym',2.5)",
@@ -184,6 +186,61 @@ try {
     [day, timed],
   );
   await db.query("select move_training_item('exercise',$1,-1)", [second]);
+  await db.query(
+    "update program_exercises set notes='Private note' where id=$1",
+    [second],
+  );
+  const copyPlan = "select copy_member_plan($1,$2,$3)";
+  const copyRequest = randomUUID();
+  await login(recipient);
+  await scalar("select save_training_plan(null,'Recipient plan',true)");
+  await denied("a member cannot copy another member's plan", copyPlan, [
+    plan,
+    b,
+    randomUUID(),
+  ]);
+  await login(a);
+  await denied("cannot copy a plan to an admin account", copyPlan, [
+    plan,
+    admin,
+    randomUUID(),
+  ]);
+  await db.query(copyPlan, [plan, recipient, copyRequest]);
+  await db.query(copyPlan, [plan, recipient, copyRequest]);
+  await login(recipient);
+  await equal(
+    "copy retry creates only one separate plan",
+    "select count(*)::int from programs where name='Plan A' and not is_active",
+    1,
+  );
+  await equal(
+    "recipient's active plan stays active",
+    "select name from programs where is_active",
+    "Recipient plan",
+  );
+  await equal(
+    "copy preserves the day and weekday",
+    "select weekday from program_days where name='Push'",
+    1,
+  );
+  await equal(
+    "copy preserves order, sets, rep ranges and timed targets",
+    "select string_agg(concat_ws(':',target_sets,rep_min,rep_max,time_target_seconds),',' order by sort_order) from program_exercises",
+    "2:30,2:6:10",
+  );
+  await equal(
+    "copy excludes private notes",
+    "select count(*)::int from program_exercises where notes is not null",
+    0,
+  );
+  await db.query("update program_exercises set target_sets=3");
+  await login(a);
+  await equal(
+    "editing the copy does not affect the source",
+    "select target_sets from program_exercises where id=$1",
+    2,
+    [second],
+  );
   await equal(
     "reordering preserves unique positions",
     "select sort_order from program_exercises where id=$1",
