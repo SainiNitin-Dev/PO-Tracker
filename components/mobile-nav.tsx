@@ -42,7 +42,7 @@ export default function MobileNav({
             aria-label="Progressive home"
           >
             <Image
-              src="/progressive-logo.png"
+              src="/progressive-olive-192.png"
               alt=""
               width={38}
               height={38}

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { createBrowserClient } from "@supabase/ssr";
 import { useMemo, useState } from "react";
 
@@ -66,7 +67,8 @@ export default function LoginPage() {
 
   return (
     <main className="app-page max-w-md">
-      <Link href="/" className="eyebrow">
+      <Link href="/" className="eyebrow inline-flex items-center gap-2">
+        <Image src="/progressive-olive-192.png" width={32} height={32} alt="" />
         Progressive
       </Link>
       <header className="page-header">

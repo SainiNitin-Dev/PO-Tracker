@@ -14,7 +14,18 @@ export const metadata: Metadata = {
   title: { default: "Progressive", template: "%s · Progressive" },
   description: "Your private strength log and training companion.",
   manifest: "/manifest.webmanifest",
-  icons: { icon: "/progressive-logo.png", apple: "/progressive-logo.png" },
+  icons: {
+    icon: {
+      url: "/progressive-olive-32.png",
+      sizes: "32x32",
+      type: "image/png",
+    },
+    apple: {
+      url: "/progressive-olive-180.png",
+      sizes: "180x180",
+      type: "image/png",
+    },
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

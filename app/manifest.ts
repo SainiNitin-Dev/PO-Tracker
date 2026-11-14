@@ -12,8 +12,14 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: "#f5f2eb",
     icons: [
       {
-        src: "/progressive-logo.png",
-        sizes: "1254x1254",
+        src: "/progressive-olive-192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/progressive-olive-512.png",
+        sizes: "512x512",
         type: "image/png",
         purpose: "any",
       },
