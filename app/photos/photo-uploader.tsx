@@ -245,7 +245,7 @@ export default function PhotoUploader({
       setWorking("");
     }
   };
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const visible = photos.filter((p) => !filter || p.pose === filter);
   return (
     <main className="app-page">

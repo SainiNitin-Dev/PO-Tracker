@@ -10,8 +10,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "test:db": "node scripts/test-database.mjs",
-    "format": "prettier --write app components lib scripts *.ts *.mjs *.json",
-    "format:check": "prettier --check app components lib scripts *.ts *.mjs *.json"
+    "format": "prettier --write app components lib scripts *.ts *.mts *.mjs *.json",
+    "format:check": "prettier --check app components lib scripts *.ts *.mts *.mjs *.json"
   },
   "dependencies": {
     "@supabase/ssr": "^0.6.1",

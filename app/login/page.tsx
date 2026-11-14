@@ -33,7 +33,7 @@ export default function LoginPage() {
       if (recovering) {
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(
           email.trim(),
-          { redirectTo: `${window.location.origin}/set-password` },
+          { redirectTo: `${window.location.origin}/auth/confirm` },
         );
         if (resetError) throw resetError;
         setMessage(
@@ -80,8 +80,7 @@ export default function LoginPage() {
       <form onSubmit={submit} className="surface stack" aria-busy={loading}>
         {!supabase && (
           <p role="alert" className="status-message" data-tone="error">
-            The app is waiting for its Supabase connection. Add the project URL
-            and publishable key in your deployment settings.
+            Sign-in is not available yet. Ask your administrator to finish setting up the app.
           </p>
         )}
         <label className="field">

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   ActiveWorkout,
   WorkoutExercise,
@@ -9,20 +9,10 @@ import type {
   WorkoutSet,
 } from "@/lib/workout-types";
 import { validateSet } from "@/lib/training-validation";
+import { requestJson } from "@/lib/client-request";
 
 async function save(body: object) {
-  const response = await fetch("/api/workouts", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(25000),
-  });
-  const result = await response.json();
-  if (!response.ok)
-    throw new Error(
-      result.error ?? "Your changes were not saved. Please try again.",
-    );
-  return result;
+  return requestJson<{ workout: ActiveWorkout | null; set: WorkoutSet }>("/api/workouts", body);
 }
 
 export default function WorkoutLogger({
@@ -37,6 +27,9 @@ export default function WorkoutLogger({
   const [dayId, setDayId] = useState(options.days[0]?.id ?? "");
   const [busy, setBusy] = useState(false);
   const [setBusyCount, setSetBusyCount] = useState(0);
+  const [unsaved, setUnsaved] = useState<Record<string, boolean>>({});
+  const onDirty = useCallback((id: string, dirty: boolean) => setUnsaved(current => current[id] === dirty ? current : { ...current, [id]: dirty }), []);
+  const hasUnsaved = Object.values(unsaved).some(Boolean);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [online, setOnline] = useState(true);
@@ -171,7 +164,7 @@ export default function WorkoutLogger({
   }
 
   async function finish() {
-    if (!workout || !endAction) return;
+    if (!workout || !endAction || hasUnsaved || setBusyCount > 0) return;
     setBusy(true);
     setError("");
     try {
@@ -197,14 +190,16 @@ export default function WorkoutLogger({
           : "Workout ended. Any saved sets are kept in your history.",
       );
       setWorkout(null);
+      setUnsaved({});
       setEndAction(null);
       setRestUntil(null);
       // Older versions could leave several unfinished sessions. Offer the next one without losing it.
-      const response = await fetch("/api/workouts", { cache: "no-store" });
-      if (response.ok) {
-        const result = await response.json();
+      try {
+        const result = await requestJson<{workout: ActiveWorkout | null}>("/api/workouts", undefined, "GET");
         setWorkout(result.workout);
-      }
+        setNotes(result.workout?.notes ?? "");
+        setBodyweight(result.workout?.bodyweight_kg?.toString() ?? "");
+      } catch { /* The finished workout is saved. Any older open session loads on the next visit. */ }
     } catch (reason) {
       setError(
         reason instanceof Error
@@ -418,6 +413,7 @@ export default function WorkoutLogger({
               index={index}
               draftKey={`progressive:set:${options.userId}:${workout.id}:${exercise.id}`}
               disabled={busy}
+              onDirty={onDirty}
               onBusy={(active) =>
                 setSetBusyCount((count) => count + (active ? 1 : -1))
               }
@@ -431,6 +427,7 @@ export default function WorkoutLogger({
               Workout notes{" "}
               <span className="muted font-normal">(optional)</span>
               <textarea
+                disabled={busy}
                 value={notes}
                 onChange={(event) =>
                   rememberNotes(event.target.value, bodyweight)
@@ -444,6 +441,7 @@ export default function WorkoutLogger({
               Body weight in kg{" "}
               <span className="muted font-normal">(optional)</span>
               <input
+                disabled={busy}
                 inputMode="decimal"
                 type="number"
                 min="20"
@@ -453,6 +451,7 @@ export default function WorkoutLogger({
                 onChange={(event) => rememberNotes(notes, event.target.value)}
               />
             </label>
+            {hasUnsaved && <p className="status-message" role="status">You have unsaved set or exercise-note changes. Save them, or discard those changes below the exercise, before ending this workout.</p>}
             {endAction ? (
               <div
                 className="space-y-3"
@@ -467,7 +466,7 @@ export default function WorkoutLogger({
                 <div className="flex flex-wrap gap-2">
                   <button
                     className="primary-action"
-                    disabled={busy || setBusyCount > 0}
+                    disabled={busy || setBusyCount > 0 || hasUnsaved}
                     onClick={finish}
                   >
                     {busy
@@ -489,14 +488,14 @@ export default function WorkoutLogger({
               <div className="flex flex-col gap-2">
                 <button
                   className="primary-action"
-                  disabled={busy || setBusyCount > 0 || workingCount === 0}
+                  disabled={busy || setBusyCount > 0 || hasUnsaved || workingCount === 0}
                   onClick={() => setEndAction("complete")}
                 >
                   Finish Workout
                 </button>
                 <button
                   className="quiet-action"
-                  disabled={busy || setBusyCount > 0}
+                  disabled={busy || setBusyCount > 0 || hasUnsaved}
                   onClick={() => setEndAction("abandon")}
                 >
                   End Without Completing
@@ -533,6 +532,7 @@ function ExerciseCard({
   onBusy,
   onSets,
   onSaved,
+  onDirty,
 }: {
   exercise: WorkoutExercise;
   index: number;
@@ -541,6 +541,7 @@ function ExerciseCard({
   onBusy: (busy: boolean) => void;
   onSets: (sets: WorkoutSet[]) => void;
   onSaved: () => void;
+  onDirty: (id: string, dirty: boolean) => void;
 }) {
   const [draft, setDraft] = useState<Draft>(blankDraft);
   const [busy, setBusy] = useState(false);
@@ -550,6 +551,20 @@ function ExerciseCard({
   const [pump, setPump] = useState(exercise.pumpRating?.toString() ?? "");
   const [notes, setNotes] = useState(exercise.notes ?? "");
   const [dirty, setDirty] = useState(false);
+  const [feedbackDirty, setFeedbackDirty] = useState(false);
+  const [savedFeedback, setSavedFeedback] = useState({pump: exercise.pumpRating?.toString() ?? "", notes: exercise.notes ?? ""});
+  const feedbackKey = `${draftKey}:feedback`;
+  useEffect(() => { onDirty(exercise.id, dirty || feedbackDirty); }, [exercise.id, dirty, feedbackDirty, onDirty]);
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(feedbackKey);
+      if (stored) { const value = JSON.parse(stored); if (typeof value.notes === "string" && typeof value.pump === "string") { setPump(value.pump); setNotes(value.notes); setFeedbackDirty(true); } }
+    } catch { /* Keep server feedback when local storage is unavailable. */ }
+  }, [feedbackKey]);
+  function changeFeedback(nextPump: string, nextNotes: string) {
+    setPump(nextPump); setNotes(nextNotes); setFeedbackDirty(true);
+    try { localStorage.setItem(feedbackKey, JSON.stringify({pump: nextPump, notes: nextNotes})); } catch { /* Keep values in memory. */ }
+  }
   const timed =
     exercise.trackingType === "time" ||
     exercise.trackingType === "weighted_time";
@@ -647,7 +662,7 @@ function ExerciseCard({
   }
 
   return (
-    <section className="surface space-y-4 p-5 sm:p-6">
+    <section className="surface p-5 sm:p-6"><fieldset disabled={busy || disabled} className="min-w-0 space-y-4">
       <header>
         <p className="eyebrow">Exercise {String(index + 1).padStart(2, "0")}</p>
         <h2 className="mt-1 text-xl font-semibold">{exercise.name}</h2>
@@ -859,7 +874,7 @@ function ExerciseCard({
           <button className="primary-action flex-1" disabled={busy || disabled}>
             {busy ? "Saving…" : editing ? "Update Set" : "Save Set"}
           </button>
-          {editing && (
+          {dirty && (
             <button
               type="button"
               className="secondary-action"
@@ -872,7 +887,7 @@ function ExerciseCard({
                 } catch {}
               }}
             >
-              Cancel
+              Discard Changes
             </button>
           )}
         </div>
@@ -886,7 +901,7 @@ function ExerciseCard({
             Muscle pump
             <select
               value={pump}
-              onChange={(event) => setPump(event.target.value)}
+              onChange={(event) => changeFeedback(event.target.value, notes)}
             >
               <option value="">Not recorded</option>
               {[1, 2, 3, 4, 5].map((rating) => (
@@ -907,7 +922,7 @@ function ExerciseCard({
               rows={2}
               maxLength={1000}
               value={notes}
-              onChange={(event) => setNotes(event.target.value)}
+              onChange={(event) => changeFeedback(pump, event.target.value)}
               placeholder="Form, discomfort, or equipment settings"
             />
           </label>
@@ -923,13 +938,16 @@ function ExerciseCard({
                   notes,
                 });
                 setMessage("Exercise notes saved.");
+                setFeedbackDirty(false); setSavedFeedback({pump, notes});
+                try { localStorage.removeItem(feedbackKey); } catch {}
               })
             }
           >
             {busy ? "Saving…" : "Save Notes"}
           </button>
+          {feedbackDirty && <><p className="muted text-xs">Exercise notes have unsaved changes.</p><button className="quiet-action" onClick={() => { setPump(savedFeedback.pump); setNotes(savedFeedback.notes); setFeedbackDirty(false); try { localStorage.removeItem(feedbackKey); } catch {} }}>Discard Note Changes</button></>}
         </div>
       </details>
-    </section>
+    </fieldset></section>
   );
 }
