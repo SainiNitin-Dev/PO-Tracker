@@ -584,6 +584,161 @@ try {
     1,
     [movement],
   );
+  const swapGym = randomUUID();
+  const original = randomUUID();
+  const alternate = randomUUID();
+  const originalEquipment = randomUUID();
+  const alternateEquipment = randomUUID();
+  await login(admin);
+  await db.query(
+    "insert into gyms(id,name,weight_increment_kg) values ($1,'Swap Gym',2.5)",
+    [swapGym],
+  );
+  await db.query(
+    "insert into exercises(id,name,tracking_type) values($1,'Original Press','reps'),($2,'Alternate Press','bodyweight_reps')",
+    [original, alternate],
+  );
+  await db.query(
+    "insert into gym_exercises(id,gym_id,exercise_id) values($1,$2,$3),($4,$2,$5)",
+    [originalEquipment, swapGym, original, alternateEquipment, alternate],
+  );
+  await db.query(replaceMuscles, [original, [muscle], []]);
+  await db.query(replaceMuscles, [alternate, [muscle], []]);
+  await login(a);
+  const swapPlan = await scalar(
+    "select save_training_plan(null,'Swap Plan',true)",
+  );
+  const swapDay = await scalar("select add_training_day($1,'Push',1)", [
+    swapPlan,
+  ]);
+  const planned = await scalar(
+    "select add_training_exercise($1,$2,3,8,12,null)",
+    [swapDay, original],
+  );
+  const opened = await scalar("select start_training_workout($1,$2)", [
+    swapGym,
+    swapDay,
+  ]);
+  const initialEntry = await scalar(
+    "select id from workout_exercises where session_id=$1",
+    [opened],
+  );
+  const swapCommand = "select swap_training_exercise($1,$2,$3)";
+  await login(b);
+  await denied("a member cannot swap another member’s exercise", swapCommand, [
+    initialEntry,
+    originalEquipment,
+    alternateEquipment,
+  ]);
+  await login(a);
+  await denied("swap rejects equipment at another gym", swapCommand, [
+    initialEntry,
+    originalEquipment,
+    equipment,
+  ]);
+  await db.query(swapCommand, [
+    initialEntry,
+    originalEquipment,
+    alternateEquipment,
+  ]);
+  await db.query(swapCommand, [
+    initialEntry,
+    originalEquipment,
+    alternateEquipment,
+  ]);
+  await equal(
+    "swap retains workout targets and changes equipment once",
+    "select target_sets::text || ':' || rep_min::text || ':' || rep_max::text from workout_exercises where session_id=$1 and gym_exercise_id=$2",
+    "3:8:12",
+    [opened, alternateEquipment],
+  );
+  await equal(
+    "swap preserves the program exercise",
+    "select exercise_id from program_exercises where id=$1",
+    original,
+    [planned],
+  );
+  const setSql = "select save_training_set($1,$2,'working',null,8,null,null)";
+  await denied(
+    "stale workout cards cannot save against the replacement",
+    setSql,
+    [initialEntry, randomUUID()],
+  );
+  const replacementEntry = await scalar(
+    "select id from workout_exercises where session_id=$1",
+    [opened],
+  );
+  await db.query(setSql, [replacementEntry, randomUUID()]);
+  await denied("a logged exercise cannot be swapped", swapCommand, [
+    replacementEntry,
+    alternateEquipment,
+    originalEquipment,
+  ]);
+
+  const importSql =
+    "select import_offline_workout($1,$2,$3,$4,$5,'Offline session',72,$6::jsonb)";
+  const offlineId = randomUUID();
+  const started = "2026-01-01T08:00:00Z";
+  const finished = "2026-01-01T09:00:00Z";
+  const offlineExercise = {
+    equipmentId: originalEquipment,
+    trackingType: "reps",
+    targetSets: 3,
+    repMin: 8,
+    repMax: 12,
+    sets: [{ id: randomUUID(), kind: "working", weight: 30, reps: 10 }],
+  };
+  const importParams = [
+    offlineId,
+    swapGym,
+    swapDay,
+    started,
+    finished,
+    JSON.stringify([offlineExercise]),
+  ];
+  await denied("a partial offline import is rolled back", importSql, [
+    ...importParams.slice(0, -1),
+    JSON.stringify([
+      offlineExercise,
+      { ...offlineExercise, equipmentId: randomUUID() },
+    ]),
+  ]);
+  await equal(
+    "a failed offline import leaves no session",
+    "select count(*)::int from workout_sessions where id=$1",
+    0,
+    [offlineId],
+  );
+  await equal(
+    "an offline workout can sync while an online session is open",
+    importSql,
+    offlineId,
+    importParams,
+  );
+  await equal(
+    "offline sync retries return the same workout",
+    importSql,
+    offlineId,
+    importParams,
+  );
+  await equal(
+    "offline sync preserves the plan day and workout time",
+    "select status::text || ':' || (performed_at=$2::timestamptz and completed_at=$3::timestamptz and program_day_id=$4)::text from workout_sessions where id=$1",
+    "completed:true",
+    [offlineId, started, finished, swapDay],
+  );
+  await equal(
+    "offline sync keeps one copy of the set",
+    "select count(*)::int from workout_sets where id=$1 and weight_kg=30 and reps=10",
+    1,
+    [offlineExercise.sets[0].id],
+  );
+  await login(b);
+  await denied(
+    "another member cannot overwrite a synced workout",
+    importSql,
+    importParams,
+  );
   await db.exec("reset role; set role anon;");
   await equal(
     "anonymous cannot see workout history",

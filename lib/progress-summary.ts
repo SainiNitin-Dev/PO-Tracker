@@ -4,6 +4,7 @@ export type ProgressSet = {
   set_kind: string;
   weight_kg: number | null;
   reps: number | null;
+  duration_seconds?: number | null;
   rir: number | null;
 };
 export type ProgressSession = {
@@ -12,6 +13,7 @@ export type ProgressSession = {
     equipmentId: string;
     exerciseId: string;
     name: string;
+    equipmentLabel?: string | null;
     trackingType: string;
     pump: number | null;
     sets: ProgressSet[];

@@ -10,6 +10,12 @@ import type {
 } from "@/lib/workout-types";
 import { validateSet } from "@/lib/training-validation";
 import { requestJson } from "@/lib/client-request";
+import WarmupCalculator from "./warmup-calculator";
+import {
+  OFFLINE_OWNER_KEY,
+  offlineWorkoutKey,
+  type OfflinePlan,
+} from "@/lib/offline-workout";
 
 async function save(body: object) {
   return requestJson<{ workout: ActiveWorkout | null; set: WorkoutSet }>(
@@ -42,6 +48,7 @@ export default function WorkoutLogger({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [online, setOnline] = useState(true);
+  const [offlineDownloaded, setOfflineDownloaded] = useState(false);
   const [endAction, setEndAction] = useState<"complete" | "abandon" | null>(
     null,
   );
@@ -69,6 +76,104 @@ export default function WorkoutLogger({
           item.gym_id === gymId && item.exercise_id === entry.exercise_id,
       ),
   );
+
+  useEffect(() => {
+    function restore() {
+      try {
+        const downloaded = Boolean(
+          localStorage.getItem(offlineWorkoutKey(options.userId)),
+        );
+        setOfflineDownloaded(downloaded);
+        if (downloaded) localStorage.setItem(OFFLINE_OWNER_KEY, options.userId);
+      } catch {
+        // The online logger works without device storage.
+      }
+    }
+    restore();
+    function onSynced() {
+      restore();
+      setNotice("Offline workout synced. Your sets are saved in your history.");
+    }
+    window.addEventListener("storage", restore);
+    window.addEventListener("progressive:offline-synced", onSynced);
+    return () => {
+      window.removeEventListener("storage", restore);
+      window.removeEventListener("progressive:offline-synced", onSynced);
+    };
+  }, [options.userId]);
+
+  async function downloadOffline() {
+    const gym = options.gyms.find((item) => item.id === gymId);
+    const day = options.days.find((item) => item.id === dayId);
+    if (
+      !gym ||
+      !day ||
+      !selected.length ||
+      unavailable.length ||
+      offlineDownloaded
+    )
+      return;
+    setBusy(true);
+    setError("");
+    try {
+      if (!("serviceWorker" in navigator))
+        throw new Error("This browser doesn’t support offline workouts.");
+      const cached = await caches.match("/offline-workout.js");
+      if (!cached)
+        throw new Error(
+          "The offline logger is still installing. Refresh and try again while connected.",
+        );
+      const plan: OfflinePlan = {
+        userId: options.userId,
+        gymId,
+        gymName: gym.name,
+        dayId,
+        dayName: day.name,
+        exercises: selected.map(
+          ({
+            name,
+            exercise_id,
+            trackingType,
+            targetSets,
+            repMin,
+            repMax,
+            timeTargetSeconds,
+          }) => {
+            const equipment = options.availability.find(
+              (item) =>
+                item.gym_id === gymId && item.exercise_id === exercise_id,
+            );
+            if (!equipment)
+              throw new Error("An exercise is unavailable at this gym.");
+            return {
+              name,
+              equipmentId: equipment.id,
+              trackingType,
+              targetSets,
+              repMin,
+              repMax,
+              timeTargetSeconds,
+            };
+          },
+        ),
+      };
+      localStorage.setItem(OFFLINE_OWNER_KEY, options.userId);
+      localStorage.setItem(
+        offlineWorkoutKey(options.userId),
+        JSON.stringify({ plan }),
+      );
+      setOfflineDownloaded(true);
+      setNotice("Training day downloaded to this device.");
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Could not download this training day.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
 
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
@@ -238,6 +343,21 @@ export default function WorkoutLogger({
     );
   }
 
+  async function swap(exercise: WorkoutExercise, replacementId: string) {
+    setBusy(true);
+    try {
+      const result = await save({
+        action: "swap",
+        workoutExerciseId: exercise.id,
+        expectedEquipmentId: exercise.gym_exercise_id,
+        replacementId,
+      });
+      setWorkout(result.workout);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const workingCount =
     workout?.exercises.reduce(
       (sum, exercise) =>
@@ -274,8 +394,16 @@ export default function WorkoutLogger({
       )}
       {notice && (
         <p className="status-message" data-tone="success" role="status">
-          {notice} <Link href="/history">View history →</Link>
+          {notice}{" "}
+          {!notice.startsWith("Training day downloaded") && (
+            <Link href="/history">View history →</Link>
+          )}
         </p>
+      )}
+      {offlineDownloaded && (
+        <a href="/offline.html" className="secondary-action">
+          Open downloaded workout
+        </a>
       )}
       {!workout ? (
         <>
@@ -370,6 +498,27 @@ export default function WorkoutLogger({
               <Link href="/program" className="quiet-action block text-center">
                 Edit My Plan
               </Link>
+              {options.extensionsEnabled && !offlineDownloaded && (
+                <div className="space-y-2 border-t border-[#ded9ce] pt-4">
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    disabled={
+                      busy ||
+                      !online ||
+                      !selected.length ||
+                      unavailable.length > 0
+                    }
+                    onClick={() => void downloadOffline()}
+                  >
+                    Download this day for offline use
+                  </button>
+                  <p className="muted text-sm">
+                    Save the selected day on this device before training without
+                    reception.
+                  </p>
+                </div>
+              )}
             </section>
           )}
         </>
@@ -423,7 +572,7 @@ export default function WorkoutLogger({
           )}
           {workout.exercises.map((exercise, index) => (
             <ExerciseCard
-              key={exercise.id}
+              key={`${exercise.id}:${exercise.gym_exercise_id}`}
               exercise={exercise}
               index={index}
               draftKey={`progressive:set:${options.userId}:${workout.id}:${exercise.id}`}
@@ -434,6 +583,11 @@ export default function WorkoutLogger({
               }
               onSets={(sets) => updateSets(exercise.id, sets)}
               onSaved={() => startRest()}
+              onSwap={
+                options.extensionsEnabled && online && setBusyCount === 0
+                  ? (id) => swap(exercise, id)
+                  : undefined
+              }
             />
           ))}
           <section className="surface space-y-4 p-5">
@@ -556,6 +710,7 @@ function ExerciseCard({
   onSets,
   onSaved,
   onDirty,
+  onSwap,
 }: {
   exercise: WorkoutExercise;
   index: number;
@@ -565,12 +720,14 @@ function ExerciseCard({
   onSets: (sets: WorkoutSet[]) => void;
   onSaved: () => void;
   onDirty: (id: string, dirty: boolean) => void;
+  onSwap?: (replacementId: string) => Promise<void>;
 }) {
   const [draft, setDraft] = useState<Draft>(blankDraft);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [removeId, setRemoveId] = useState<string | null>(null);
+  const [replacement, setReplacement] = useState("");
   const [pump, setPump] = useState(exercise.pumpRating?.toString() ?? "");
   const [notes, setNotes] = useState(exercise.notes ?? "");
   const [dirty, setDirty] = useState(false);
@@ -725,6 +882,44 @@ function ExerciseCard({
               : `${exercise.repMin ?? "—"}–${exercise.repMax ?? "—"} reps`}
           </p>
         </header>
+        {onSwap &&
+          exercise.alternatives.length > 0 &&
+          !exercise.sets.length &&
+          !dirty &&
+          !feedbackDirty &&
+          !savedFeedback.notes &&
+          !savedFeedback.pump && (
+            <details className="rounded-xl border border-[#ded9ce] p-4">
+              <summary className="cursor-pointer font-semibold">
+                Swap for this workout
+              </summary>
+              <label className="field mt-3">
+                Replacement exercise
+                <select
+                  value={replacement}
+                  onChange={(event) => setReplacement(event.target.value)}
+                >
+                  <option value="">Choose an alternative at this gym</option>
+                  {exercise.alternatives.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                      {item.equipmentLabel
+                        ? ` · ${item.equipmentLabel}`
+                        : ""} · {item.muscles.join(", ")}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="secondary-action mt-3"
+                disabled={!replacement}
+                onClick={() => perform(() => onSwap(replacement))}
+              >
+                Swap exercise
+              </button>
+            </details>
+          )}
         {exercise.lastPerformance && (
           <div className="rounded-xl border border-[#ded9ce] p-4">
             <h3 className="font-semibold">Last time on this equipment</h3>
@@ -766,6 +961,19 @@ function ExerciseCard({
           <h3 className="font-semibold">What to try today</h3>
           <p className="mt-1">{exercise.suggestion.message}</p>
         </div>
+        {exercise.trackingType === "reps" && !editing && (
+          <WarmupCalculator
+            suggestedKg={exercise.lastPerformance?.sets[0]?.weight_kg ?? null}
+            onUseSet={(kg, reps) =>
+              change({
+                ...blankDraft(),
+                kind: "warmup",
+                weight: String(kg),
+                amount: String(reps),
+              })
+            }
+          />
+        )}
         {exercise.sets.length > 0 && (
           <div className="space-y-2">
             <p className="text-sm font-semibold">Saved sets</p>

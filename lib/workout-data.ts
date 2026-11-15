@@ -24,7 +24,7 @@ export async function loadActiveWorkout(
   const { data: session, error } = await supabase
     .from("workout_sessions")
     .select(
-      "id,performed_at,notes,bodyweight_kg,gym:gyms(name,weight_increment_kg),day:program_days(name),workout_exercises(id,gym_exercise_id,sort_order,pump_rating,notes,target_sets,rep_min,rep_max,time_target_seconds,program:program_exercises(target_sets,rep_min,rep_max,time_target_seconds),equipment:gym_exercises(equipment_label,exercise:exercises(name,tracking_type)),workout_sets(id,set_number,set_kind,weight_kg,reps,duration_seconds,rir))",
+      "id,gym_id,performed_at,notes,bodyweight_kg,gym:gyms(name,weight_increment_kg),day:program_days(name),workout_exercises(id,gym_exercise_id,sort_order,pump_rating,notes,target_sets,rep_min,rep_max,time_target_seconds,program:program_exercises(target_sets,rep_min,rep_max,time_target_seconds),equipment:gym_exercises(equipment_label,exercise:exercises(name,tracking_type,exercise_muscles(muscle_id,contribution))),workout_sets(id,set_number,set_kind,weight_kg,reps,duration_seconds,rir))",
     )
     .eq("user_id", userId)
     .eq("status", "in_progress")
@@ -36,21 +36,35 @@ export async function loadActiveWorkout(
   const equipmentIds = [
     ...new Set(session.workout_exercises.map((entry) => entry.gym_exercise_id)),
   ];
-  const { data: recent, error: historyError } = equipmentIds.length
-    ? await supabase
-        .from("workout_sessions")
-        .select(
-          "id,performed_at,notes,day:program_days(name),workout_exercises(gym_exercise_id,notes,workout_sets(id,set_number,set_kind,weight_kg,reps,duration_seconds,rir))",
-        )
-        .eq("user_id", userId)
-        .eq("status", "completed")
-        .lt("performed_at", session.performed_at)
-        .in("workout_exercises.gym_exercise_id", equipmentIds)
-        .eq("workout_exercises.workout_sets.set_kind", "working")
-        .order("performed_at", { ascending: false })
-        .limit(60)
-    : { data: [], error: null };
+  const [{ data: recent, error: historyError }, catalog] = await Promise.all([
+    equipmentIds.length
+      ? await supabase
+          .from("workout_sessions")
+          .select(
+            "id,performed_at,notes,day:program_days(name),workout_exercises(gym_exercise_id,notes,workout_sets(id,set_number,set_kind,weight_kg,reps,duration_seconds,rir))",
+          )
+          .eq("user_id", userId)
+          .eq("status", "completed")
+          .lt("performed_at", session.performed_at)
+          .in("workout_exercises.gym_exercise_id", equipmentIds)
+          .eq("workout_exercises.workout_sets.set_kind", "working")
+          .order("performed_at", { ascending: false })
+          .limit(60)
+      : { data: [], error: null },
+    session.gym_id &&
+    session.workout_exercises.some((entry) => !entry.workout_sets.length)
+      ? supabase
+          .from("gym_exercises")
+          .select(
+            "id,equipment_label,exercise:exercises!inner(name,tracking_type,exercise_muscles(muscle_id,contribution,muscle:muscles(name)))",
+          )
+          .eq("gym_id", session.gym_id)
+          .is("archived_at", null)
+          .is("exercise.archived_at", null)
+      : { data: [], error: null },
+  ]);
   if (historyError) throw historyError;
+  if (catalog.error) throw catalog.error;
   const gym = one(session.gym);
   return {
     id: session.id,
@@ -88,6 +102,53 @@ export async function loadActiveWorkout(
         const previousSets = (history[1]?.workout_sets ?? []) as WorkoutSet[];
         const trackingType = (exercise?.tracking_type ??
           "reps") as TrackingType;
+        const timed =
+          trackingType === "time" || trackingType === "weighted_time";
+        const primary = new Set(
+          exercise?.exercise_muscles
+            .filter((item) => Number(item.contribution) === 1)
+            .map((item) => item.muscle_id),
+        );
+        const alternatives =
+          entry.workout_sets.length ||
+          entry.pump_rating ||
+          entry.notes ||
+          !primary.size
+            ? []
+            : (catalog.data ?? [])
+                .flatMap((candidate) => {
+                  const movement = one(candidate.exercise);
+                  if (
+                    !movement ||
+                    equipmentIds.includes(candidate.id) ||
+                    timed !==
+                      ["time", "weighted_time"].includes(movement.tracking_type)
+                  )
+                    return [];
+                  const muscles = movement.exercise_muscles.flatMap((item) => {
+                    const name = one(item.muscle)?.name;
+                    return name &&
+                      Number(item.contribution) === 1 &&
+                      primary.has(item.muscle_id)
+                      ? [name]
+                      : [];
+                  });
+                  return muscles.length
+                    ? [
+                        {
+                          id: candidate.id,
+                          name: movement.name,
+                          equipmentLabel: candidate.equipment_label,
+                          muscles,
+                        },
+                      ]
+                    : [];
+                })
+                .sort(
+                  (a, b) =>
+                    b.muscles.length - a.muscles.length ||
+                    a.name.localeCompare(b.name),
+                );
         const targetSets = entry.target_sets ?? plan?.target_sets ?? 1;
         const repMin = entry.rep_min ?? plan?.rep_min ?? null;
         const repMax = entry.rep_max ?? plan?.rep_max ?? null;
@@ -129,6 +190,7 @@ export async function loadActiveWorkout(
           timeTargetSeconds,
           pumpRating: entry.pump_rating,
           notes: entry.notes,
+          alternatives,
           sets: ([...entry.workout_sets] as WorkoutSet[]).sort(
             (a, b) => a.set_number - b.set_number,
           ),

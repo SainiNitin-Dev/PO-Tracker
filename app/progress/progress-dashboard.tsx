@@ -9,6 +9,7 @@ import {
   type compareExperiment,
 } from "@/lib/progress-summary";
 import ConfirmDialog, { type Confirmation } from "@/components/confirm-dialog";
+import type { weeklyReview } from "@/lib/weekly-review";
 type Muscle = { id: string; name: string };
 type Target = { muscle_id: string; weekly_min: number; weekly_max: number };
 type Trial = Experiment & {
@@ -20,11 +21,13 @@ export default function ProgressDashboard({
   targets,
   experiments,
   summary,
+  review,
 }: {
   muscles: Muscle[];
   targets: Target[];
   experiments: Trial[];
   summary: ReturnType<typeof summarizeProgress>;
+  review: ReturnType<typeof weeklyReview>;
 }) {
   const router = useRouter();
   const [working, setWorking] = useState(false);
@@ -93,16 +96,70 @@ export default function ProgressDashboard({
           {message.text}
         </p>
       )}
-      <div className="mb-6 grid grid-cols-2 gap-4">
-        <section className="surface">
-          <p className="muted text-sm">Sessions · last 7 days</p>
-          <p className="metric-value mt-2">{summary.sessions}</p>
-        </section>
-        <section className="surface">
-          <p className="muted text-sm">Working sets · last 7 days</p>
-          <p className="metric-value mt-2">{summary.workingSets}</p>
-        </section>
-      </div>
+      <section className="surface mb-6 space-y-4">
+        <header>
+          <h2 className="text-lg font-semibold">Weekly training review</h2>
+          <p className="muted text-sm">
+            Last 7 days compared with the previous 7 days
+          </p>
+        </header>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="muted text-sm">Completed workouts</p>
+            <p className="metric-value">{review.completed}</p>
+          </div>
+          <div>
+            <p className="muted text-sm">Working sets</p>
+            <p className="metric-value">{review.workingSets}</p>
+            <p className="muted text-sm">
+              {review.previousWorkingSets} the previous week
+            </p>
+          </div>
+        </div>
+        {review.days.length > 0 && (
+          <div>
+            <h3 className="font-semibold">Current plan days</h3>
+            <ul className="divide-y divide-[#ded9ce] text-sm">
+              {review.days.map((day) => (
+                <li key={day.id} className="flex justify-between gap-4 py-2">
+                  <span>{day.name}</span>
+                  <span className="muted">
+                    {day.completed ? "Completed" : "No completion"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <div>
+          <h3 className="font-semibold">Lifts that progressed</h3>
+          {review.improvements.length ? (
+            <ul className="divide-y divide-[#ded9ce] text-sm">
+              {review.improvements.map((lift) => (
+                <li
+                  key={lift.equipmentId}
+                  className="flex justify-between gap-4 py-2"
+                >
+                  <span>
+                    {lift.name}
+                    {lift.equipment && ` · ${lift.equipment}`}
+                  </span>
+                  <span>
+                    {lift.before} → {lift.value}{" "}
+                    {lift.measure === "weight"
+                      ? `kg for ${lift.matched} reps`
+                      : `${lift.measure}${lift.matched > 0 ? ` at ${lift.matched} kg` : ""}`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted text-sm">
+              No increases on comparable sets across these two weeks.
+            </p>
+          )}
+        </div>
+      </section>
       <div className="grid items-start gap-6 lg:grid-cols-2">
         <section className="surface">
           <h2 className="text-lg font-semibold">Finding your rhythm</h2>

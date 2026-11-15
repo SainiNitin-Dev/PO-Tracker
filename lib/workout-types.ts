@@ -25,6 +25,12 @@ export type WorkoutExercise = {
     sets: WorkoutSet[];
   } | null;
   suggestion: Suggestion;
+  alternatives: {
+    id: string;
+    name: string;
+    equipmentLabel: string | null;
+    muscles: string[];
+  }[];
   pumpRating: number | null;
   notes: string | null;
 };
@@ -39,6 +45,7 @@ export type ActiveWorkout = {
 };
 export type WorkoutOptions = {
   userId: string;
+  extensionsEnabled: boolean;
   gyms: { id: string; name: string }[];
   days: { id: string; name: string; weekday: number | null }[];
   entries: {
@@ -47,6 +54,11 @@ export type WorkoutOptions = {
     exercise_id: string;
     name: string;
     archived: boolean;
+    trackingType: TrackingType;
+    targetSets: number;
+    repMin: number | null;
+    repMax: number | null;
+    timeTargetSeconds: number | null;
   }[];
-  availability: { gym_id: string; exercise_id: string }[];
+  availability: { id: string; gym_id: string; exercise_id: string }[];
 };

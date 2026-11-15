@@ -39,6 +39,20 @@ export async function POST(request: Request) {
         workout: await loadActiveWorkout(supabase, user.id),
       });
     }
+    if (body.action === "swap") {
+      const { error } = await supabase.rpc("swap_training_exercise", {
+        p_exercise_id: uuid(body.workoutExerciseId, "Exercise"),
+        p_expected_equipment: uuid(
+          body.expectedEquipmentId,
+          "Current equipment",
+        ),
+        p_replacement: uuid(body.replacementId, "Replacement"),
+      });
+      if (error) throw error;
+      return NextResponse.json({
+        workout: await loadActiveWorkout(supabase, user.id),
+      });
+    }
     if (
       body.action === "set" ||
       body.action === "delete-set" ||
