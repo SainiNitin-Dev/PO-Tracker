@@ -52,9 +52,7 @@ export default async function RootLayout({
         >
           Skip to content
         </a>
-        <PwaRegister
-          memberId={identity?.profile.role === "user" ? identity.user.id : null}
-        />
+        <PwaRegister />
         <RouteFeedback />
         <OperationFeedback />
         <MobileNav

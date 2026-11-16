@@ -54,11 +54,6 @@ export type WorkoutOptions = {
     exercise_id: string;
     name: string;
     archived: boolean;
-    trackingType: TrackingType;
-    targetSets: number;
-    repMin: number | null;
-    repMax: number | null;
-    timeTargetSeconds: number | null;
   }[];
-  availability: { id: string; gym_id: string; exercise_id: string }[];
+  availability: { gym_id: string; exercise_id: string }[];
 };

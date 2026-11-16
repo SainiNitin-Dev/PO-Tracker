@@ -16,6 +16,7 @@ Apply any missing migrations below before deploying this version.
    - `supabase/migrations/0015_separate_coach_chats.sql`
    - `supabase/migrations/0016_workout_swaps.sql`
    - `supabase/migrations/0017_offline_workouts.sql`
+   - `supabase/migrations/0018_finish_with_feedback.sql`
 2. Each file must finish successfully before continuing. These updates retain accounts, workout rows, catalog references, photos and chat history. Catalog removal archives items instead of deleting historical references.
 3. In Supabase **Authentication → URL Configuration**, set the Site URL to your production origin, and allow these exact redirect URLs:
    - `https://personalised-overload-tracker.vercel.app/set-password`
@@ -84,6 +85,6 @@ npm run build
 - History and context reads have explicit limits. AI allowance records older than 32 days are cleaned during new reservations.
 - Keep your accounts on their free plans and monitor provider dashboards. Application limits reduce use but cannot guarantee that an account’s external quota will never be exhausted; provider quota failures are surfaced to the user.
 
-## Offline behavior and iPhone installation
+## iPhone installation
 
-In Safari, open the production URL, tap Share, then **Add to Home Screen**. In Workout, choose a gym and training day and select **Download this day for offline use**. When disconnected, open Workout to reach the offline logger. Finished offline workouts sync when the browser reconnects and the same member is signed in. Keep the download on a device you control. The service worker caches the public offline interface and icons. The downloaded day and pending log live in device storage. Set drafts for a workout started online stay with that online session and can be saved after reconnecting.
+In Safari, open the production URL, tap Share, then **Add to Home Screen**. Workout logging requires a connection. If reception drops while the logger is open, unsaved drafts stay on the device and can be saved after reconnecting.

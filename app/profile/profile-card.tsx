@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useState, useTransition, type FormEvent } from "react";
 import { requestJson } from "@/lib/client-request";
 import ConfirmDialog, { type Confirmation } from "@/components/confirm-dialog";
-import { OFFLINE_OWNER_KEY } from "@/lib/offline-workout";
 type Metric = { id: string; recorded_at: string; bodyweight_kg: number | null };
 export default function ProfileCard({
   userId,
@@ -65,7 +64,6 @@ export default function ProfileCard({
       async () => {
         const { error } = await client().auth.signOut({ scope: "local" });
         if (error) throw error;
-        localStorage.removeItem(OFFLINE_OWNER_KEY);
         for (const key of Object.keys(localStorage))
           if (
             [

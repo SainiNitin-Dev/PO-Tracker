@@ -675,69 +675,87 @@ try {
     originalEquipment,
   ]);
 
-  const importSql =
-    "select import_offline_workout($1,$2,$3,$4,$5,'Offline session',72,$6::jsonb)";
-  const offlineId = randomUUID();
-  const started = "2026-01-01T08:00:00Z";
-  const finished = "2026-01-01T09:00:00Z";
-  const offlineExercise = {
-    equipmentId: originalEquipment,
-    trackingType: "reps",
-    targetSets: 3,
-    repMin: 8,
-    repMax: 12,
-    sets: [{ id: randomUUID(), kind: "working", weight: 30, reps: 10 }],
+  const finishWithFeedback =
+    "select finish_training_workout_with_feedback($1,$2,$3,$4,$5::jsonb)";
+  const draft = {
+    exercise_id: replacementEntry,
+    pump: 4,
+    notes: "Better setup",
   };
-  const importParams = [
-    offlineId,
-    swapGym,
-    swapDay,
-    started,
-    finished,
-    JSON.stringify([offlineExercise]),
+  const finishParams = [
+    opened,
+    false,
+    "Training notes",
+    72,
+    JSON.stringify([draft]),
   ];
-  await denied("a partial offline import is rolled back", importSql, [
-    ...importParams.slice(0, -1),
-    JSON.stringify([
-      offlineExercise,
-      { ...offlineExercise, equipmentId: randomUUID() },
-    ]),
-  ]);
-  await equal(
-    "a failed offline import leaves no session",
-    "select count(*)::int from workout_sessions where id=$1",
-    0,
-    [offlineId],
-  );
-  await equal(
-    "an offline workout can sync while an online session is open",
-    importSql,
-    offlineId,
-    importParams,
-  );
-  await equal(
-    "offline sync retries return the same workout",
-    importSql,
-    offlineId,
-    importParams,
-  );
-  await equal(
-    "offline sync preserves the plan day and workout time",
-    "select status::text || ':' || (performed_at=$2::timestamptz and completed_at=$3::timestamptz and program_day_id=$4)::text from workout_sessions where id=$1",
-    "completed:true",
-    [offlineId, started, finished, swapDay],
-  );
-  await equal(
-    "offline sync keeps one copy of the set",
-    "select count(*)::int from workout_sets where id=$1 and weight_kg=30 and reps=10",
-    1,
-    [offlineExercise.sets[0].id],
-  );
   await login(b);
   await denied(
-    "another member cannot overwrite a synced workout",
-    importSql,
-    importParams,
+    "another member cannot finish a workout with feedback",
+    finishWithFeedback,
+    finishParams,
+  );
+  await login(a);
+  await denied(
+    "invalid feedback rolls back the entire workout finish",
+    finishWithFeedback,
+    [
+      ...finishParams.slice(0, -1),
+      JSON.stringify([draft, { exercise_id: randomUUID(), pump: 3 }]),
+    ],
+  );
+  await equal(
+    "failed finish leaves the workout open with feedback unchanged",
+    "select s.status::text || ':' || (we.notes is null)::text from workout_sessions s join workout_exercises we on we.session_id=s.id where we.id=$1",
+    "in_progress:true",
+    [replacementEntry],
+  );
+  await db.query(finishWithFeedback, finishParams);
+  await equal(
+    "finishing saves exercise feedback and workout notes together",
+    "select s.status::text || ':' || s.notes || ':' || we.pump_rating::text || ':' || we.notes from workout_sessions s join workout_exercises we on we.session_id=s.id where we.id=$1",
+    "completed:Training notes:4:Better setup",
+    [replacementEntry],
+  );
+  await db.query(finishWithFeedback, [
+    ...finishParams.slice(0, -1),
+    JSON.stringify([{ ...draft, notes: null }]),
+  ]);
+  await equal(
+    "retrying a finished workout preserves its feedback",
+    "select notes from workout_exercises where id=$1",
+    "Better setup",
+    [replacementEntry],
+  );
+
+  const abandoned = await scalar("select start_training_workout($1,$2)", [
+    swapGym,
+    swapDay,
+  ]);
+  const abandonedEntry = await scalar(
+    "select id from workout_exercises where session_id=$1",
+    [abandoned],
+  );
+  await db.query("select save_training_feedback($1,5,'Draft notes')", [
+    abandonedEntry,
+  ]);
+  await db.query(finishWithFeedback, [
+    abandoned,
+    true,
+    "",
+    null,
+    JSON.stringify([{ exercise_id: abandonedEntry, pump: null, notes: null }]),
+  ]);
+  await equal(
+    "ending without completing saves cleared optional exercise feedback",
+    "select s.status::text || ':' || (we.pump_rating is null and we.notes is null)::text from workout_sessions s join workout_exercises we on we.session_id=s.id where we.id=$1",
+    "abandoned:true",
+    [abandonedEntry],
+  );
+  await equal(
+    "offline workout import is retired",
+    "select has_function_privilege('authenticated', 'public.import_offline_workout(uuid,uuid,uuid,timestamptz,timestamptz,text,numeric,jsonb)', 'execute')",
+    false,
   );
   await db.exec("reset role; set role anon;");
   await equal(

@@ -9,6 +9,17 @@ import {
 } from "@/lib/training-validation";
 import type { TrackingType } from "@/lib/progression";
 
+const optionalNotes = (value: unknown, label: string, max: number) =>
+  textValue(value ?? "", label, { min: 0, max });
+
+function exerciseFeedback(body: Record<string, unknown>) {
+  return {
+    exercise_id: uuid(body.workoutExerciseId, "Exercise").toLowerCase(),
+    pump: optionalTrainingNumber(body.pumpRating, "Muscle pump", 1, 5, true),
+    notes: optionalNotes(body.notes, "Exercise notes", 1000) || null,
+  };
+}
+
 export async function GET() {
   try {
     const { supabase, user } = await requireApiUser();
@@ -75,16 +86,7 @@ export async function POST(request: Request) {
           "This workout is no longer open. Refresh to see its latest status.",
         );
       if (body.action === "feedback") {
-        const pump = optionalTrainingNumber(
-          body.pumpRating,
-          "Muscle pump",
-          1,
-          5,
-          true,
-        );
-        const notes = body.notes
-          ? textValue(body.notes, "Exercise notes", { max: 1000 })
-          : null;
+        const { pump, notes } = exerciseFeedback(body);
         const { error } = await supabase.rpc("save_training_feedback", {
           p_exercise_id: exerciseId,
           p_pump: pump,
@@ -122,19 +124,42 @@ export async function POST(request: Request) {
       return NextResponse.json({ set: data });
     }
     if (body.action === "complete" || body.action === "abandon") {
-      const { error } = await supabase.rpc("finish_training_workout", {
+      const input = body.feedback ?? [];
+      if (!Array.isArray(input) || input.length > 101)
+        throw new HttpError(
+          400,
+          "Check the exercise feedback for this workout.",
+        );
+      const feedback = input.map((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item))
+          throw new HttpError(
+            400,
+            "Check the exercise feedback for this workout.",
+          );
+        return exerciseFeedback(item);
+      });
+      if (
+        new Set(feedback.map((item) => item.exercise_id)).size !==
+        feedback.length
+      )
+        throw new HttpError(400, "Each exercise can have one feedback entry.");
+      const args = {
         p_id: uuid(body.sessionId, "Workout"),
         p_abandon: body.action === "abandon",
-        p_notes: body.notes
-          ? textValue(body.notes, "Workout notes", { max: 2000 })
-          : "",
+        p_notes: optionalNotes(body.notes, "Workout notes", 2000),
         p_bodyweight: optionalTrainingNumber(
           body.bodyweightKg,
           "Body weight",
           20,
           500,
         ),
-      });
+      };
+      const { error } = feedback.length
+        ? await supabase.rpc("finish_training_workout_with_feedback", {
+            ...args,
+            p_feedback: feedback,
+          })
+        : await supabase.rpc("finish_training_workout", args);
       if (error) throw error;
       return NextResponse.json({ ok: true });
     }

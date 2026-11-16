@@ -17,7 +17,7 @@
       }
       main {
         max-width: 440px;
-        margin: 4vh auto;
+        margin: 15vh auto;
         padding: 24px;
       }
       .brand {
@@ -33,67 +33,13 @@
       p {
         color: #686a60;
       }
-      a,
-      button {
+      a {
         display: inline-block;
         background: #4c5c3e;
         color: white;
         padding: 12px 20px;
         border-radius: 8px;
         text-decoration: none;
-      }
-      button {
-        border: 0;
-        cursor: pointer;
-        font: inherit;
-      }
-      button:disabled {
-        opacity: 0.55;
-        cursor: default;
-      }
-      section {
-        background: #fffcf7;
-        border: 1px solid #ded9ce;
-        border-radius: 12px;
-        padding: 16px;
-        margin: 14px 0;
-      }
-      section h2 {
-        font-size: 20px;
-        margin: 0;
-      }
-      form,
-      label {
-        display: grid;
-        gap: 8px;
-        margin-top: 8px;
-      }
-      input,
-      textarea,
-      select {
-        box-sizing: border-box;
-        min-width: 0;
-        width: 100%;
-        font: inherit;
-        padding: 9px;
-        border-radius: 6px;
-        border: 1px solid #949486;
-      }
-      .secondary {
-        color: #292d28;
-        background: #e9e5da;
-        padding: 8px 12px;
-      }
-      .row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        align-items: center;
-        justify-content: space-between;
-        margin: 8px 0;
-      }
-      #status {
-        min-height: 1.6em;
       }
       a:focus-visible {
         outline: 3px solid #71865a;
@@ -107,14 +53,12 @@
         <img src="/progressive-olive-192.png" width="38" height="38" alt="" />
         Progressive
       </div>
-      <h1 id="title">Offline workouts</h1>
-      <p id="description">
-        Download a training day from Workout while connected to use it here.
+      <h1>You’re offline.</h1>
+      <p>
+        Reconnect to load your account. Any set drafts kept on this device will
+        be available when you reopen your workout.
       </p>
-      <p id="status" role="status" aria-live="polite"></p>
-      <div id="session"></div>
-      <a href="/workout">Back to Workout</a>
+      <a href="/workout">Try again</a>
     </main>
-    <script defer src="/offline-workout.js"></script>
   </body>
 </html>

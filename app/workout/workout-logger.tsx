@@ -11,11 +11,8 @@ import type {
 import { validateSet } from "@/lib/training-validation";
 import { requestJson } from "@/lib/client-request";
 import WarmupCalculator from "./warmup-calculator";
-import {
-  OFFLINE_OWNER_KEY,
-  offlineWorkoutKey,
-  type OfflinePlan,
-} from "@/lib/offline-workout";
+
+type FeedbackDraft = { pump: string; notes: string };
 
 async function save(body: object) {
   return requestJson<{ workout: ActiveWorkout | null; set: WorkoutSet }>(
@@ -45,10 +42,24 @@ export default function WorkoutLogger({
     [],
   );
   const hasUnsaved = Object.values(unsaved).some(Boolean);
+  const [feedbackDrafts, setFeedbackDrafts] = useState<
+    Record<string, FeedbackDraft>
+  >({});
+  const onFeedbackDraft = useCallback(
+    (id: string, draft: FeedbackDraft | null) => {
+      setFeedbackDrafts((current) => {
+        if (draft) return { ...current, [id]: draft };
+        if (!(id in current)) return current;
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+    },
+    [],
+  );
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [online, setOnline] = useState(true);
-  const [offlineDownloaded, setOfflineDownloaded] = useState(false);
   const [endAction, setEndAction] = useState<"complete" | "abandon" | null>(
     null,
   );
@@ -76,104 +87,6 @@ export default function WorkoutLogger({
           item.gym_id === gymId && item.exercise_id === entry.exercise_id,
       ),
   );
-
-  useEffect(() => {
-    function restore() {
-      try {
-        const downloaded = Boolean(
-          localStorage.getItem(offlineWorkoutKey(options.userId)),
-        );
-        setOfflineDownloaded(downloaded);
-        if (downloaded) localStorage.setItem(OFFLINE_OWNER_KEY, options.userId);
-      } catch {
-        // The online logger works without device storage.
-      }
-    }
-    restore();
-    function onSynced() {
-      restore();
-      setNotice("Offline workout synced. Your sets are saved in your history.");
-    }
-    window.addEventListener("storage", restore);
-    window.addEventListener("progressive:offline-synced", onSynced);
-    return () => {
-      window.removeEventListener("storage", restore);
-      window.removeEventListener("progressive:offline-synced", onSynced);
-    };
-  }, [options.userId]);
-
-  async function downloadOffline() {
-    const gym = options.gyms.find((item) => item.id === gymId);
-    const day = options.days.find((item) => item.id === dayId);
-    if (
-      !gym ||
-      !day ||
-      !selected.length ||
-      unavailable.length ||
-      offlineDownloaded
-    )
-      return;
-    setBusy(true);
-    setError("");
-    try {
-      if (!("serviceWorker" in navigator))
-        throw new Error("This browser doesn’t support offline workouts.");
-      const cached = await caches.match("/offline-workout.js");
-      if (!cached)
-        throw new Error(
-          "The offline logger is still installing. Refresh and try again while connected.",
-        );
-      const plan: OfflinePlan = {
-        userId: options.userId,
-        gymId,
-        gymName: gym.name,
-        dayId,
-        dayName: day.name,
-        exercises: selected.map(
-          ({
-            name,
-            exercise_id,
-            trackingType,
-            targetSets,
-            repMin,
-            repMax,
-            timeTargetSeconds,
-          }) => {
-            const equipment = options.availability.find(
-              (item) =>
-                item.gym_id === gymId && item.exercise_id === exercise_id,
-            );
-            if (!equipment)
-              throw new Error("An exercise is unavailable at this gym.");
-            return {
-              name,
-              equipmentId: equipment.id,
-              trackingType,
-              targetSets,
-              repMin,
-              repMax,
-              timeTargetSeconds,
-            };
-          },
-        ),
-      };
-      localStorage.setItem(OFFLINE_OWNER_KEY, options.userId);
-      localStorage.setItem(
-        offlineWorkoutKey(options.userId),
-        JSON.stringify({ plan }),
-      );
-      setOfflineDownloaded(true);
-      setNotice("Training day downloaded to this device.");
-    } catch (reason) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "Could not download this training day.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
 
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
@@ -287,14 +200,27 @@ export default function WorkoutLogger({
         sessionId: workout.id,
         notes,
         bodyweightKg: bodyweight,
+        feedback: workout.exercises.flatMap(({ id }) => {
+          const draft = feedbackDrafts[id];
+          return draft
+            ? [
+                {
+                  workoutExerciseId: id,
+                  pumpRating: draft.pump,
+                  notes: draft.notes,
+                },
+              ]
+            : [];
+        }),
       });
       try {
         if (restKey) localStorage.removeItem(restKey);
         if (notesKey) localStorage.removeItem(notesKey);
-        for (const exercise of workout.exercises)
-          localStorage.removeItem(
-            `progressive:set:${options.userId}:${workout.id}:${exercise.id}`,
-          );
+        for (const exercise of workout.exercises) {
+          const draftKey = `progressive:set:${options.userId}:${workout.id}:${exercise.id}`;
+          localStorage.removeItem(draftKey);
+          localStorage.removeItem(`${draftKey}:feedback`);
+        }
       } catch {
         /* Saved data lives on the server. */
       }
@@ -305,6 +231,7 @@ export default function WorkoutLogger({
       );
       setWorkout(null);
       setUnsaved({});
+      setFeedbackDrafts({});
       setEndAction(null);
       setRestUntil(null);
       // Older versions could leave several unfinished sessions. Offer the next one without losing it.
@@ -394,16 +321,8 @@ export default function WorkoutLogger({
       )}
       {notice && (
         <p className="status-message" data-tone="success" role="status">
-          {notice}{" "}
-          {!notice.startsWith("Training day downloaded") && (
-            <Link href="/history">View history →</Link>
-          )}
+          {notice} <Link href="/history">View history →</Link>
         </p>
-      )}
-      {offlineDownloaded && (
-        <a href="/offline.html" className="secondary-action">
-          Open downloaded workout
-        </a>
       )}
       {!workout ? (
         <>
@@ -498,27 +417,6 @@ export default function WorkoutLogger({
               <Link href="/program" className="quiet-action block text-center">
                 Edit My Plan
               </Link>
-              {options.extensionsEnabled && !offlineDownloaded && (
-                <div className="space-y-2 border-t border-[#ded9ce] pt-4">
-                  <button
-                    type="button"
-                    className="secondary-action"
-                    disabled={
-                      busy ||
-                      !online ||
-                      !selected.length ||
-                      unavailable.length > 0
-                    }
-                    onClick={() => void downloadOffline()}
-                  >
-                    Download this day for offline use
-                  </button>
-                  <p className="muted text-sm">
-                    Save the selected day on this device before training without
-                    reception.
-                  </p>
-                </div>
-              )}
             </section>
           )}
         </>
@@ -578,6 +476,7 @@ export default function WorkoutLogger({
               draftKey={`progressive:set:${options.userId}:${workout.id}:${exercise.id}`}
               disabled={busy}
               onDirty={onDirty}
+              onFeedbackDraft={onFeedbackDraft}
               onBusy={(active) =>
                 setSetBusyCount((count) => count + (active ? 1 : -1))
               }
@@ -622,8 +521,7 @@ export default function WorkoutLogger({
             </label>
             {hasUnsaved && (
               <p className="status-message" role="status">
-                You have unsaved set or exercise-note changes. Save them, or
-                discard those changes below the exercise, before ending this
+                You have an unsaved set. Save or discard it before ending this
                 workout.
               </p>
             )}
@@ -635,8 +533,8 @@ export default function WorkoutLogger({
               >
                 <p>
                   {endAction === "complete"
-                    ? "Finish this workout? Saved sets will appear in your progress."
-                    : "End without completing? Your saved sets will be kept, but this workout won’t count towards progress."}
+                    ? "Finish this workout? Your sets and notes will be saved to History."
+                    : "End without completing? Your sets and notes will be saved to History."}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -710,6 +608,7 @@ function ExerciseCard({
   onSets,
   onSaved,
   onDirty,
+  onFeedbackDraft,
   onSwap,
 }: {
   exercise: WorkoutExercise;
@@ -720,6 +619,7 @@ function ExerciseCard({
   onSets: (sets: WorkoutSet[]) => void;
   onSaved: () => void;
   onDirty: (id: string, dirty: boolean) => void;
+  onFeedbackDraft: (id: string, draft: FeedbackDraft | null) => void;
   onSwap?: (replacementId: string) => Promise<void>;
 }) {
   const [draft, setDraft] = useState<Draft>(blankDraft);
@@ -731,15 +631,19 @@ function ExerciseCard({
   const [pump, setPump] = useState(exercise.pumpRating?.toString() ?? "");
   const [notes, setNotes] = useState(exercise.notes ?? "");
   const [dirty, setDirty] = useState(false);
-  const [feedbackDirty, setFeedbackDirty] = useState(false);
   const [savedFeedback, setSavedFeedback] = useState({
     pump: exercise.pumpRating?.toString() ?? "",
     notes: exercise.notes ?? "",
   });
   const feedbackKey = `${draftKey}:feedback`;
+  const feedbackDirty =
+    pump !== savedFeedback.pump || notes.trim() !== savedFeedback.notes.trim();
   useEffect(() => {
-    onDirty(exercise.id, dirty || feedbackDirty);
-  }, [exercise.id, dirty, feedbackDirty, onDirty]);
+    onDirty(exercise.id, dirty);
+  }, [exercise.id, dirty, onDirty]);
+  useEffect(() => {
+    onFeedbackDraft(exercise.id, feedbackDirty ? { pump, notes } : null);
+  }, [exercise.id, feedbackDirty, notes, onFeedbackDraft, pump]);
   useEffect(() => {
     try {
       const stored = localStorage.getItem(feedbackKey);
@@ -748,7 +652,6 @@ function ExerciseCard({
         if (typeof value.notes === "string" && typeof value.pump === "string") {
           setPump(value.pump);
           setNotes(value.notes);
-          setFeedbackDirty(true);
         }
       }
     } catch {
@@ -758,12 +661,18 @@ function ExerciseCard({
   function changeFeedback(nextPump: string, nextNotes: string) {
     setPump(nextPump);
     setNotes(nextNotes);
-    setFeedbackDirty(true);
     try {
-      localStorage.setItem(
-        feedbackKey,
-        JSON.stringify({ pump: nextPump, notes: nextNotes }),
-      );
+      if (
+        nextPump === savedFeedback.pump &&
+        nextNotes.trim() === savedFeedback.notes.trim()
+      ) {
+        localStorage.removeItem(feedbackKey);
+      } else {
+        localStorage.setItem(
+          feedbackKey,
+          JSON.stringify({ pump: nextPump, notes: nextNotes }),
+        );
+      }
     } catch {
       /* Keep values in memory. */
     }
@@ -1231,7 +1140,7 @@ function ExerciseCard({
             </label>
             <button
               className="secondary-action"
-              disabled={busy || disabled}
+              disabled={busy || disabled || !feedbackDirty}
               onClick={() =>
                 perform(async () => {
                   await save({
@@ -1241,7 +1150,6 @@ function ExerciseCard({
                     notes,
                   });
                   setMessage("Exercise notes saved.");
-                  setFeedbackDirty(false);
                   setSavedFeedback({ pump, notes });
                   try {
                     localStorage.removeItem(feedbackKey);
@@ -1254,17 +1162,12 @@ function ExerciseCard({
             {feedbackDirty && (
               <>
                 <p className="muted text-xs">
-                  Exercise notes have unsaved changes.
+                  Feedback saves when you finish the workout.
                 </p>
                 <button
                   className="quiet-action"
                   onClick={() => {
-                    setPump(savedFeedback.pump);
-                    setNotes(savedFeedback.notes);
-                    setFeedbackDirty(false);
-                    try {
-                      localStorage.removeItem(feedbackKey);
-                    } catch {}
+                    changeFeedback(savedFeedback.pump, savedFeedback.notes);
                   }}
                 >
                   Discard Note Changes

@@ -1,8 +1,7 @@
 /* Cache public assets only. Never store account pages, API responses or mutations. */
-const CACHE = "progressive-public-v5";
+const CACHE = "progressive-public-v6";
 const PUBLIC_ASSETS = [
   "/offline.html",
-  "/offline-workout.js",
   "/progressive-olive-32.png",
   "/progressive-olive-192.png",
 ];
